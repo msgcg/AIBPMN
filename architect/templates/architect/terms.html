@@ -1,0 +1,330 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru" class="legal-html">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Условия использования — AIBPMN Architect</title>
+  <meta name="description" content="Условия использования веб-сервиса AIBPMN Architect: моделирование бизнес-процессов с искусственным интеллектом, лицензия GPLv3, права на диаграммы и отказ от гарантий."/>
+  
+  <link rel="icon" type="image/svg+xml" href="{% static 'architect/icons/favicon.svg' %}"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="{% static 'architect/icons/favicon-32x32.png' %}"/>
+  <link rel="icon" type="image/png" sizes="16x16" href="{% static 'architect/icons/favicon-16x16.png' %}"/>
+  <link rel="shortcut icon" href="{% static 'architect/icons/favicon.ico' %}"/>
+  <link rel="manifest" href="/manifest.json"/>
+  <meta name="theme-color" content="#4f46e5"/>
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- App CSS for variables & theme -->
+  <link rel="stylesheet" href="{% static 'architect/css/app.css' %}?v=2.4"/>
+
+  <style>
+    html.legal-html,
+    html.legal-html body,
+    body.legal-page-wrap {
+      height: auto !important;
+      min-height: 100% !important;
+      overflow: visible !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+    }
+    .legal-page-wrap {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-app);
+      color: var(--text-primary);
+    }
+    .legal-header {
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+    .legal-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 700;
+      font-size: 1.15rem;
+    }
+    .legal-brand:hover {
+      color: var(--accent-primary);
+    }
+    .legal-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .legal-container {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+      flex: 1;
+      width: 100%;
+    }
+    .legal-hero {
+      margin-bottom: 36px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .legal-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: var(--accent-primary-light);
+      color: var(--accent-primary);
+      font-size: 0.78rem;
+      font-weight: 600;
+      border-radius: 9999px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(79, 70, 229, 0.2);
+    }
+    .legal-hero h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin: 0 0 10px;
+      color: var(--text-primary);
+      line-height: 1.25;
+    }
+    .legal-hero p {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+    .legal-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 24px 28px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .legal-section h2 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin: 0 0 14px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .legal-section h2 i {
+      color: var(--accent-primary);
+    }
+    .legal-section p, .legal-section li {
+      font-size: 0.92rem;
+      line-height: 1.65;
+      color: var(--text-secondary);
+      margin: 0 0 10px;
+    }
+    .legal-section ul {
+      margin: 8px 0 14px 20px;
+      padding: 0;
+    }
+    .legal-section strong {
+      color: var(--text-primary);
+    }
+    .legal-alert {
+      background: rgba(234, 179, 8, 0.1);
+      border: 1px solid rgba(234, 179, 8, 0.25);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      margin: 16px 0 6px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .legal-alert i {
+      color: #eab308;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .legal-alert-text {
+      font-size: 0.86rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+    .legal-footer {
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      padding: 24px;
+      text-align: center;
+      font-size: 0.84rem;
+      color: var(--text-muted);
+    }
+    .legal-nav-links {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    .legal-nav-links a {
+      color: var(--accent-primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .legal-nav-links a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body class="legal-page-wrap">
+
+  <header class="legal-header">
+    <a href="/" class="legal-brand" title="На главную страницу редактора">
+      <i data-lucide="git-merge" class="icon" style="color:var(--accent-primary);"></i>
+      <span>AIBPMN Architect</span>
+    </a>
+    <div class="legal-header-actions">
+      <button id="legal-theme-btn" class="btn btn-ghost btn-icon btn-sm" title="Сменить тему">
+        <i data-lucide="sun-moon" class="icon-sm"></i>
+      </button>
+      <a href="/" class="btn btn-primary btn-sm" style="text-decoration:none;">
+        <i data-lucide="arrow-left" class="icon-sm"></i>
+        <span>Вернуться в редактор</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="legal-container">
+    <div class="legal-hero">
+      <div class="legal-badge">
+        <i data-lucide="file-check-2" class="icon-xs"></i>
+        <span>Правовая информация</span>
+      </div>
+      <h1>Условия использования (Terms of Use)</h1>
+      <p>Действующая редакция от 1 сентября 2026 г. • Приложение AIBPMN Architect</p>
+    </div>
+
+    <div class="legal-section">
+      <h2>
+        <i data-lucide="sparkles" class="icon"></i>
+        <span>1. Предмет и назначение сервиса</span>
+      </h2>
+      <p>
+        Веб-приложение <strong>AIBPMN Architect</strong> представляет собой интерактивную среду проектирования, анализа и визуализации бизнес-процессов в нотации BPMN 2.0 на основе подхода <em>BPMN-as-Code</em> с использованием искусственного интеллекта (GigaChat Ultra 3.5).
+      </p>
+      <p>
+        Сервис предоставляет возможность создания проектов, текстового описания процессов на DSL-языке, двунаправленной синхронизации с визуальным холстом, загрузки документов в базу знаний и экспорта готовых схем в векторные (SVG), растровые (PNG), документные (PDF) и стандартизированные XML-форматы.
+      </p>
+    </div>
+
+    <div class="legal-section">
+      <h2>
+        <i data-lucide="shield-check" class="icon"></i>
+        <span>2. Интеллектуальная собственность и лицензия</span>
+      </h2>
+      <ul>
+        <li><strong>Лицензия на исходный код:</strong> Программное обеспечение AIBPMN Architect распространяется на условиях свободной общественной лицензии <strong>GNU General Public License v3.0 (GPLv3)</strong>.</li>
+        <li><strong>Права на созданный контент:</strong> Все исключительные права на бизнес-процессы, структуры данных, DSL-код, XML-манифесты и экспортированные графические материалы, созданные пользователем в среде AIBPMN Architect, в полном объеме принадлежат <strong>пользователю</strong>.</li>
+        <li>Сервис не претендует на права авторства или владения пользовательскими диаграммами и не использует закрытые диаграммы пользователей для коммерческого распространения.</li>
+      </ul>
+    </div>
+
+    <div class="legal-section">
+      <h2>
+        <i data-lucide="bot" class="icon"></i>
+        <span>3. Использование генеративного искусственного интеллекта</span>
+      </h2>
+      <p>
+        Встроенный ИИ-архитектор (GigaChat) функционирует в качестве вспомогательного интеллектуального инструмента. Генерация кода процессов выполняется на основании текстовых запросов пользователя и контекста загруженной базы знаний.
+      </p>
+      <div class="legal-alert">
+        <i data-lucide="alert-triangle" class="icon"></i>
+        <div class="legal-alert-text">
+          <strong>Внимание:</strong> Результаты генерации ИИ носят рекомендательный характер. Пользователь обязан самостоятельно проверить сгенерированную диаграмму, логические переходы, соответствие стандартам BPMN 2.0 и внутренним регламентам своей организации перед запуском процесса в промышленную эксплуатацию.
+        </div>
+      </div>
+    </div>
+
+    <div class="legal-section">
+      <h2>
+        <i data-lucide="scale" class="icon"></i>
+        <span>4. Отказ от гарантий и ограничение ответственности</span>
+      </h2>
+      <p>
+        Программное обеспечение и сервис предоставляются по принципу <strong>«КАК ЕСТЬ» (AS IS)</strong>, без каких-либо явных или подразумеваемых гарантий, включая, но не ограничиваясь, гарантиями коммерческой пригодности, бесперебойной работы или пригодности для конкретных бизнес-задач.
+      </p>
+      <p>
+        Разработчики и правообладатели не несут ответственности за любые прямые, косвенные или случайные убытки, возникшие вследствие использования или невозможности использования данного сервиса либо неточностей в сгенерированных моделях.
+      </p>
+    </div>
+
+    <div class="legal-section">
+      <h2>
+        <i data-lucide="user-x" class="icon"></i>
+        <span>5. Прекращение использования и удаление данных</span>
+      </h2>
+      <p>
+        Пользователь вправе в любой момент прекратить использование сервиса, экспортировать все свои диаграммы в локальные файлы и выполнить <strong>полное безвозвратное удаление аккаунта</strong> со всеми проектами, схемами и файлами базы знаний непосредственно в настройках профиля.
+      </p>
+    </div>
+  </main>
+
+  <footer class="legal-footer">
+    <div class="legal-nav-links">
+      <a href="/terms/">Условия использования</a>
+      <span>•</span>
+      <a href="/privacy/">Политика конфиденциальности</a>
+      <span>•</span>
+      <a href="/">Редактор BPMN</a>
+    </div>
+    <div>AIBPMN Architect © 2026. Распространяется под свободной лицензией GNU GPLv3.</div>
+  </footer>
+
+  <script>
+    if (window.lucide) { window.lucide.createIcons(); }
+
+    // Synchronize Theme
+    const savedTheme = localStorage.getItem('aibpmn_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+
+    const themeBtn = document.getElementById('legal-theme-btn');
+    if (themeBtn) {
+      themeBtn.addEventListener('click', () => {
+        const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+        const next = cur === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('aibpmn_theme', next);
+      });
+    }
+
+    // Prevent Edge from opening new tab on middle-click or link navigation
+    document.addEventListener('auxclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (e.button !== 0) return;
+      const link = e.target.closest('a[href]');
+      if (!link) return;
+      const href = link.getAttribute('href');
+      if (!href) return;
+      if (href.startsWith('/') && !href.startsWith('//') && !link.hasAttribute('target') && !link.hasAttribute('download')) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.location.assign(href);
+      }
+    });
+  </script>
+</body>
+</html>
+

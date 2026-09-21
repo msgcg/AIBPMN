@@ -1,0 +1,68 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Django: Отладка (Development / Dev)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/manage.py",
+            "args": [
+                "runserver",
+                "0.0.0.0:8000",
+                "--settings=aibpmn_project.settings.dev"
+            ],
+            "django": true,
+            "justMyCode": true,
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "env": {
+                "DJANGO_ENV": "dev",
+                "DJANGO_DEBUG": "True"
+            },
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "Django: Продакшн (Production / Prod)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/manage.py",
+            "args": [
+                "runserver",
+                "0.0.0.0:8000",
+                "--insecure",
+                "--settings=aibpmn_project.settings.prod"
+            ],
+            "django": true,
+            "justMyCode": true,
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "env": {
+                "DJANGO_ENV": "production",
+                "DJANGO_DEBUG": "False"
+            },
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "Django: Тесты (Run Tests)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/manage.py",
+            "args": [
+                "test",
+                "architect"
+            ],
+            "django": true,
+            "justMyCode": true,
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}

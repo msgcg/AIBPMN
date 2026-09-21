@@ -1,0 +1,1180 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Архитектор BPMN-диаграмм | GigaChat Ultra</title>
+
+  <!-- Favicons and App Icons -->
+  <link rel="icon" type="image/svg+xml" href="{% static 'architect/icons/favicon.svg' %}"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="{% static 'architect/icons/favicon-32x32.png' %}"/>
+  <link rel="icon" type="image/png" sizes="16x16" href="{% static 'architect/icons/favicon-16x16.png' %}"/>
+  <link rel="shortcut icon" href="{% static 'architect/icons/favicon.ico' %}"/>
+
+  <!-- PWA Web App Manifest -->
+  <link rel="manifest" href="/manifest.json"/>
+
+  <!-- Mobile & Platform Theming -->
+  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)"/>
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="application-name" content="AIBPMN"/>
+
+  <!-- Apple iOS Safari Support -->
+  <link rel="apple-touch-icon" sizes="180x180" href="{% static 'architect/icons/apple-touch-icon.png' %}"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="AIBPMN"/>
+
+  <!-- Microsoft Windows Tiles -->
+  <meta name="msapplication-TileColor" content="#4f46e5"/>
+  <meta name="msapplication-TileImage" content="{% static 'architect/icons/icon-192.png' %}"/>
+
+  <!-- Vendor CSS -->
+  <link rel="stylesheet" href="{% static 'architect/vendor/diagram-js.css' %}"/>
+  <link rel="stylesheet" href="{% static 'architect/vendor/bpmn-js.css' %}"/>
+  <link rel="stylesheet" href="{% static 'architect/vendor/bpmn-embedded.css' %}"/>
+  <link rel="stylesheet" href="{% static 'architect/vendor/prism.min.css' %}"/>
+
+  <!-- Custom App CSS (UI/UX Pro Max) -->
+  <link rel="stylesheet" href="{% static 'architect/css/app.css' %}?v=2.6"/>
+</head>
+<body>
+
+  <!-- ── Topbar ────────────────────────────────────────────────────────── -->
+  <header id="topbar">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <button id="sidebar-toggle-btn" class="btn btn-ghost btn-icon" title="Проекты и схемы">
+        <i data-lucide="menu" class="icon"></i>
+      </button>
+      <div class="brand">
+        <i data-lucide="git-merge" class="icon icon-lg"></i>
+        <span>BPMN Architect</span>
+        <span class="brand-badge">GigaChat Ultra 3.5</span>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- Active Diagram Controls -->
+    <div class="selector-group" style="display: flex; align-items: center; gap: 8px;">
+      <i data-lucide="file-text" class="icon-sm" style="color: var(--text-muted);"></i>
+      <input type="text" id="diagram-title-input" class="select-input" value="{{ current_diagram.name }}" style="width: 220px;" title="Имя текущей диаграммы" placeholder="Название диаграммы"/>
+      <button id="new-chat-btn" class="btn btn-ghost btn-icon" title="Новый чат/схема в проекте">
+        <i data-lucide="message-square-plus" class="icon"></i>
+      </button>
+      <button id="delete-chat-btn" class="btn btn-ghost btn-icon" title="Удалить текущую схему">
+        <i data-lucide="trash-2" class="icon"></i>
+      </button>
+      <button id="save-btn" class="btn btn-primary" title="Сохранить изменения в БД">
+        <i data-lucide="save" class="icon"></i>
+        <span>Сохранить</span>
+      </button>
+    </div>
+
+    <!-- Topbar Right Controls -->
+    <div class="topbar-right">
+      <!-- Knowledge Base Modal Trigger -->
+      <button id="kb-modal-btn" class="btn btn-ghost" title="Управление базой знаний модели">
+        <i data-lucide="book-open" class="icon"></i>
+        <span>База знаний</span>
+      </button>
+
+      <!-- Export Dropdown -->
+      <div class="dropdown">
+        <button id="export-btn" class="btn btn-ghost" title="Экспорт схемы">
+          <i data-lucide="download" class="icon"></i>
+          <span>Экспорт</span>
+          <i data-lucide="chevron-down" class="icon-sm"></i>
+        </button>
+        <div id="export-menu" class="dropdown-menu">
+          <div class="dropdown-item" id="export-pdf-btn">
+            <i data-lucide="file-text" class="icon"></i>
+            <span>Документ PDF (Вектор)</span>
+          </div>
+          <div class="dropdown-item" id="export-png-btn">
+            <i data-lucide="image" class="icon"></i>
+            <span>Изображение PNG (Растр)</span>
+          </div>
+          <div class="dropdown-item" id="export-svg-btn">
+            <i data-lucide="code-2" class="icon"></i>
+            <span>Вектор SVG</span>
+          </div>
+          <div class="dropdown-item" id="export-dsl-btn">
+            <i data-lucide="file-text" class="icon"></i>
+            <span>Исходный код DSL (.bac)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Badge -->
+      <div id="status-badge" class="status-badge {% if status_info.ok %}ok{% else %}err{% endif %}">
+        <span class="status-dot"></span>
+        <span id="status-badge-text">
+          {% if status_info.ok %}{{ status_info.model }} готов{% else %}Ошибка GigaChat{% endif %}
+        </span>
+      </div>
+
+      <!-- User Profile / Auth Section -->
+      <div id="user-profile-section" class="user-profile-section">
+        {% if user.is_authenticated %}
+          <div class="user-badge" id="user-badge" title="Настройки профиля ({{ user.username }})" role="button" tabindex="0">
+            <i data-lucide="user" class="icon-sm" style="color: var(--accent-primary);"></i>
+            <span class="user-name">{{ user.username }}</span>
+            <i data-lucide="settings" class="icon-xs user-settings-icon" style="color: var(--text-muted); margin-left: 2px;"></i>
+          </div>
+          <button id="logout-btn" class="btn btn-ghost btn-icon btn-sm" title="Выйти из аккаунта">
+            <i data-lucide="log-out" class="icon-sm"></i>
+          </button>
+        {% else %}
+          <div class="guest-badge" id="guest-badge" title="Гостевой режим: схемы, чаты и база знаний не сохраняются в БД">
+            <i data-lucide="eye" class="icon-xs" style="color: var(--accent-warning, #f59e0b);"></i>
+            <span>Без сохранения</span>
+          </div>
+          <button id="open-auth-btn" class="btn btn-primary btn-sm" title="Войти в систему или зарегистрироваться">
+            <i data-lucide="log-in" class="icon-sm"></i>
+            <span>Войти</span>
+          </button>
+        {% endif %}
+      </div>
+
+      <!-- Theme Toggle -->
+      <button id="theme-toggle-btn" class="btn btn-ghost btn-icon" title="Переключить тему">
+        <i data-lucide="sun-moon" class="icon"></i>
+      </button>
+
+      <!-- Mobile More Actions Dropdown (Only visible <= 800px) -->
+      <div id="mobile-more-dropdown" class="dropdown mobile-more-dropdown">
+        <button id="mobile-more-btn" class="btn btn-ghost btn-icon" title="Дополнительные действия">
+          <i data-lucide="more-vertical" class="icon"></i>
+        </button>
+        <div id="mobile-more-menu" class="dropdown-menu">
+          {% if user.is_authenticated %}
+            <div class="dropdown-item" id="mobile-profile-btn">
+              <i data-lucide="settings" class="icon"></i>
+              <span>Настройки профиля</span>
+            </div>
+            <div class="dropdown-item" id="mobile-logout-btn">
+              <i data-lucide="log-out" class="icon"></i>
+              <span>Выйти ({{ user.username }})</span>
+            </div>
+          {% else %}
+            <div class="dropdown-item" id="mobile-auth-btn">
+              <i data-lucide="log-in" class="icon"></i>
+              <span>Вход / Регистрация</span>
+            </div>
+          {% endif %}
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-item" id="mobile-kb-btn">
+            <i data-lucide="book-open" class="icon"></i>
+            <span>База знаний</span>
+          </div>
+          <div class="dropdown-item" id="mobile-theme-btn">
+            <i data-lucide="sun-moon" class="icon"></i>
+            <span>Сменить тему</span>
+          </div>
+          <div class="dropdown-item" id="mobile-delete-chat-btn" style="color: var(--accent-danger);">
+            <i data-lucide="trash-2" class="icon"></i>
+            <span>Удалить диаграмму</span>
+          </div>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-item" style="cursor: default; opacity: 0.85; font-size: 0.78rem;">
+            <span class="status-dot" style="background: {% if status_info.ok %}var(--accent-success){% else %}var(--accent-danger){% endif %}; margin-right: 6px;"></span>
+            <span>{% if status_info.ok %}{{ status_info.model }}{% else %}GigaChat офлайн{% endif %}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Sidebar Drawer: Projects & Chats ──────────────────────────────── -->
+  <div id="sidebar-backdrop"></div>
+  <aside id="sidebar-drawer">
+    <div class="sidebar-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <i data-lucide="folder-kanban" class="icon" style="color: var(--accent-primary);"></i>
+        <span>Проекты и схемы</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 4px;">
+        <button id="sidebar-new-project-btn" class="btn btn-ghost btn-icon btn-sm" title="Новый проект">
+          <i data-lucide="folder-plus" class="icon-sm"></i>
+        </button>
+        <button id="sidebar-close-btn" class="btn btn-ghost btn-icon btn-sm" title="Закрыть панель">
+          <i data-lucide="x" class="icon-sm"></i>
+        </button>
+      </div>
+    </div>
+    <div id="sidebar-projects-list" class="sidebar-content">
+      <!-- Populated dynamically by app.js refreshSidebarProjects() -->
+    </div>
+    <div class="sidebar-footer">
+      <a href="/terms/" class="sidebar-legal-link" title="Условия использования">
+        <i data-lucide="file-text" class="icon-xs"></i>
+        <span>Условия</span>
+      </a>
+      <span class="sidebar-footer-dot">•</span>
+      <a href="/privacy/" class="sidebar-legal-link" title="Политика конфиденциальности">
+        <i data-lucide="shield" class="icon-xs"></i>
+        <span>Конфиденциальность</span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- ── Main 2-Panel Layout ───────────────────────────────────────────── -->
+  <main id="app-layout">
+
+    <!-- 1. Left Unified Panel: Tabs (Chat / DSL Code / BPMN XML) -->
+    <section id="panel-unified">
+      <!-- Tabs Nav -->
+      <div class="unified-tabs-nav">
+        <button class="unified-tab-btn active" data-tab="tab-chat">
+          <i data-lucide="message-square" class="icon-sm"></i>
+          <span>Чат с AI</span>
+        </button>
+        <button class="unified-tab-btn" data-tab="tab-dsl">
+          <i data-lucide="code" class="icon-sm"></i>
+          <span>Код (DSL)</span>
+        </button>
+      </div>
+
+      <!-- Tab 1: AI Chat Pane -->
+      <div id="tab-chat" class="unified-tab-content active">
+        <div class="chat-tab-header">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <i data-lucide="bot" class="icon-sm" style="color: var(--accent-primary);"></i>
+            <span>Архитектор бизнес-процессов</span>
+          </div>
+          <button id="clear-chat-btn" class="btn btn-ghost btn-icon btn-sm" title="Очистить переписку">
+            <i data-lucide="eraser" class="icon-sm"></i>
+          </button>
+        </div>
+
+        <!-- Bulk Delete Actions Bar -->
+        <div id="bulk-delete-bar" class="bulk-delete-bar">
+          <span id="bulk-delete-count">Выбрано: 0</span>
+          <div style="display:flex; gap:6px;">
+            <button id="bulk-delete-btn" class="btn btn-danger btn-sm">
+              <i data-lucide="trash-2" class="icon-sm"></i>
+              <span>Удалить выбранные</span>
+            </button>
+            <button id="bulk-cancel-btn" class="btn btn-ghost btn-sm">Отмена</button>
+          </div>
+        </div>
+
+        <!-- Messages Stream -->
+        <div id="chat-messages-container"></div>
+
+        <!-- Input Area -->
+        <div id="chat-input-area">
+          <!-- Quick Templates -->
+          <div class="template-chips">
+            <button class="template-chip" data-prompt="Процесс обработки онлайн-заказа: проверка остатков, списание оплаты, параллельная сборка на складе и печать накладной, курьерская доставка.">
+              Заказ интернет-магазина
+            </button>
+            <button class="template-chip" data-prompt="Процесс рассмотрения кредитной заявки: автоматический скоринг, при среднем балле ручная проверка андеррайтером, формирование договора и выдача средств.">
+              Кредитный конвейер
+            </button>
+            <button class="template-chip" data-prompt="Онбординг нового сотрудника: HR заводит учетную запись, параллельно IT выдает технику и доступ во внутреннюю сеть, а руководитель назначает план испытательного срока.">
+              Онбординг персонала
+            </button>
+            <button class="template-chip" data-prompt="Обработка инцидента безопасности: регистрация тикета, первичная классификация, если уровень критический - эскалация руководителю дежурной смены, устранение и закрытие.">
+              Инцидент-менеджмент
+            </button>
+          </div>
+
+          <div class="input-wrapper">
+            <!-- Attached Markdown File Preview Chip -->
+            <div id="attached-md-preview" class="attached-md-chip" style="display:none;">
+              <div class="attached-md-info">
+                <i data-lucide="file-text" class="icon-sm"></i>
+                <span id="attached-md-name" class="attached-md-name">документ.md</span>
+                <span id="attached-md-size" class="attached-md-size">0 КБ</span>
+              </div>
+              <button type="button" id="remove-attached-md-btn" class="btn-remove-attachment" title="Открепить файл">
+                <i data-lucide="x" class="icon-sm"></i>
+              </button>
+            </div>
+
+            <textarea id="chat-prompt" placeholder="Опишите процесс на русском языке или дайте команду доработки (например: «добавь проверку директором если сумма > 100 000»)..."></textarea>
+            <div class="input-controls">
+              <div class="input-controls-left">
+                <input type="file" id="attach-md-input" accept=".md,.markdown,text/markdown" style="display:none;">
+                <button type="button" id="attach-md-btn" class="btn btn-ghost btn-sm" title="Прикрепить Markdown-документ (.md)">
+                  <i data-lucide="paperclip" class="icon-sm"></i>
+                  <span class="attach-btn-label">Прикрепить .md</span>
+                </button>
+                <span class="input-hint" style="font-size:0.72rem; color:var(--text-muted);">Shift+Enter — перенос строки</span>
+              </div>
+              <div style="display:flex; gap:6px;">
+                <button type="button" id="stop-btn" class="btn btn-danger" style="display:none;" title="Прервать генерацию">
+                  <i data-lucide="square" class="icon"></i>
+                  <span>Остановить</span>
+                </button>
+                <button type="button" id="generate-btn" class="btn btn-primary" title="Отправить запрос в AI Архитектор">
+                  <i data-lucide="sparkles" class="icon"></i>
+                  <span>Отправить</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: DSL Code Editor Pane -->
+      <div id="tab-dsl" class="unified-tab-content">
+        <div class="dsl-toolbar">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" id="dsl-docs-btn" class="btn btn-ghost btn-sm" title="Справка и примеры синтаксиса BPMN-as-Code">
+              <i data-lucide="book-open" class="icon-sm"></i>
+              <span>Справка по коду</span>
+            </button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button type="button" id="code-fullscreen-exit-btn" class="code-fullscreen-exit-btn btn btn-primary btn-sm" title="Свернуть редактор (Esc)">
+              <i data-lucide="minimize-2" class="icon-sm"></i>
+              <span>Свернуть</span>
+            </button>
+            <button type="button" id="import-dsl-btn" class="btn btn-ghost btn-sm" title="Импортировать DSL-код (.bac)">
+              <i data-lucide="upload" class="icon-sm"></i>
+              <span>Импорт .bac</span>
+            </button>
+            <input type="file" id="import-dsl-input" accept=".bac,.txt" style="display:none;">
+            <button type="button" id="code-fullscreen-btn" class="btn btn-ghost btn-sm" title="Развернуть на весь экран">
+              <i data-lucide="maximize-2" class="icon-sm"></i>
+              <span id="code-fullscreen-label">Во весь экран</span>
+            </button>
+          </div>
+        </div>
+        <div id="code-editor-wrap">
+          <div id="code-line-numbers">1</div>
+          <div id="code-editor-container">
+            <pre id="code-highlight-pre" aria-hidden="true"><code id="code-highlight-code" class="language-bac"></code></pre>
+            <textarea id="code-editor" spellcheck="false">{{ current_diagram.dsl_code }}</textarea>
+          </div>
+        </div>
+        <div id="code-error-bar"></div>
+      </div>
+    </section>
+
+    <!-- Resizer -->
+    <div id="resizer-main" class="panel-resizer"></div>
+
+    <!-- 2. Right Panel: Visual BPMN 2.0 Modeler Canvas -->
+    <section id="panel-canvas">
+      <div class="panel-header">
+        <i data-lucide="layout" class="icon"></i>
+        <span>Интерактивный визуальный редактор (BPMN 2.0)</span>
+      </div>
+
+      <!-- Visual Modeler Canvas -->
+      <div id="bpmn-canvas"></div>
+
+      <!-- Live Sync Pill -->
+      <div id="sync-pill" class="sync-pill">
+        <i data-lucide="refresh-cw" class="icon-sm"></i>
+        <span>Синхронизировано из холста</span>
+      </div>
+
+      <!-- Zoom & Canvas Controls -->
+      <div class="canvas-floating-controls">
+        <button id="zoom-in" class="btn btn-ghost btn-icon btn-sm" title="Увеличить">
+          <i data-lucide="plus" class="icon-sm"></i>
+        </button>
+        <button id="zoom-out" class="btn btn-ghost btn-icon btn-sm" title="Уменьшить">
+          <i data-lucide="minus" class="icon-sm"></i>
+        </button>
+        <button id="zoom-fit" class="btn btn-ghost btn-icon btn-sm" title="Вписать в экран">
+          <i data-lucide="maximize-2" class="icon-sm"></i>
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── Modals ────────────────────────────────────────────────────────── -->
+
+  <!-- 1. Create Project Modal -->
+  <div id="project-modal" class="modal-overlay">
+    <div class="modal-box" style="max-width:480px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i data-lucide="folder-plus" class="icon"></i>
+          <span>Создать новый проект</span>
+        </div>
+      </div>
+      <form id="project-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="modal-project-name">Название проекта</label>
+            <input type="text" id="modal-project-name" class="form-control" placeholder="Например: Автоматизация логистики" required/>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="modal-project-desc">Описание (необязательно)</label>
+            <textarea id="modal-project-desc" class="form-control" rows="3" placeholder="Краткое назначение проекта"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="modal-cancel-project" class="btn btn-ghost">Отмена</button>
+          <button type="submit" class="btn btn-primary">Создать</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. Knowledge Base Manager Modal -->
+  <div id="kb-modal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i data-lucide="book-open" class="icon"></i>
+          <span>База знаний модели (Системный промпт)</span>
+        </div>
+        <button id="kb-modal-close" class="btn btn-ghost btn-icon btn-sm" title="Закрыть">
+          <i data-lucide="x" class="icon"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:12px;">
+          Файлы базы знаний автоматически собираются и подаются в модель <strong>GigaChat Ultra 3.5</strong> перед каждой генерацией. Вы можете изменять существующие правила моделирования или загружать документы (.md, .txt, .json, .csv).
+        </p>
+        <div class="kb-layout">
+          <!-- Files list & upload -->
+          <div class="kb-sidebar">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span style="font-size:0.75rem; font-weight:700; text-transform:uppercase; color:var(--text-muted);">Файлы</span>
+              <button id="kb-new-file-btn" class="btn btn-ghost btn-icon btn-sm" title="Добавить файл в базу знаний">
+                <i data-lucide="plus" class="icon-sm"></i>
+              </button>
+            </div>
+            <div id="kb-files-list" style="display:flex; flex-direction:column; gap:4px; overflow-y:auto; flex:1;">
+              {% for f in kb_files %}
+                <div class="kb-file-item {% if forloop.first %}active{% endif %}" data-name="{{ f.name }}">
+                  <span>{{ f.name }}</span>
+                </div>
+              {% endfor %}
+            </div>
+
+            <!-- Upload Drop Zone -->
+            <input type="file" id="kb-upload-input" style="display:none;" accept=".md,.txt,.json,.csv,.bpmn,.xml"/>
+            <div id="kb-upload-zone" class="kb-upload-zone" title="Нажмите для загрузки файла в базу знаний">
+              <i data-lucide="upload-cloud" class="icon" style="color:var(--accent-primary); margin-bottom:4px;"></i>
+              <div style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">Загрузить документ</div>
+              <div style="font-size:0.68rem; color:var(--text-muted);">.md, .txt, .json, .csv</div>
+            </div>
+          </div>
+
+          <!-- File Editor -->
+          <div class="kb-content-area">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span id="kb-current-file-name" style="font-size:0.82rem; font-weight:600; font-family:var(--font-mono); color:var(--accent-primary);"></span>
+              <button id="kb-save-file-btn" class="btn btn-primary btn-sm">
+                <i data-lucide="check" class="icon-sm"></i>
+                <span>Сохранить файл</span>
+              </button>
+            </div>
+            <textarea id="kb-file-editor" spellcheck="false"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Initial State Data for JavaScript -->
+  <script>
+    window.INITIAL_DATA = {
+      projectId: {{ current_project.id|default:0 }},
+      diagramId: {{ current_diagram.id|default:0 }},
+      isAuthenticated: {% if user.is_authenticated %}true{% else %}false{% endif %},
+      username: "{{ user.username|default:'' }}",
+      isGuest: {% if not user.is_authenticated %}true{% else %}false{% endif %},
+      messages: [
+        {% for m in initial_messages %}
+          {
+            id: {{ m.id|default:0 }},
+            role: "{{ m.role }}",
+            content: "{{ m.content|escapejs }}",
+            explanation: "{{ m.explanation|escapejs }}",
+            is_error: {% if m.is_error %}true{% else %}false{% endif %},
+            created_at: "{{ m.created_at }}"
+          }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      ]
+    };
+  </script>
+
+  <!-- App Custom Modal Dialog (Replacing browser alert/confirm/prompt) -->
+  <div id="app-dialog-backdrop" class="app-dialog-backdrop"></div>
+  <div id="app-dialog" class="app-dialog" role="dialog" aria-modal="true">
+    <div class="app-dialog-header">
+      <div id="app-dialog-title" class="app-dialog-title">Подтверждение</div>
+      <button id="app-dialog-close" class="btn btn-ghost btn-icon btn-sm" title="Закрыть">
+        <i data-lucide="x" class="icon-sm"></i>
+      </button>
+    </div>
+    <div id="app-dialog-body" class="app-dialog-body"></div>
+    <div id="app-dialog-input-container" class="app-dialog-input-container" style="display:none; padding: 0 16px 14px;">
+      <input type="text" id="app-dialog-input" class="app-dialog-input select-input" style="width:100%; cursor:text;" placeholder="Введите значение..."/>
+    </div>
+    <div class="app-dialog-footer">
+      <button id="app-dialog-cancel" class="btn btn-ghost btn-sm">Отмена</button>
+      <button id="app-dialog-ok" class="btn btn-primary btn-sm">Подтвердить</button>
+    </div>
+  </div>
+
+  <!-- ── Authentication Modal (Login / Register) ────────────────────────── -->
+  <div id="auth-modal" class="modal-overlay">
+    <div class="modal-box auth-modal-box">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="lock" class="icon" style="color: var(--accent-primary);"></i>
+          <span id="auth-modal-title" class="modal-title">Вход в систему</span>
+        </div>
+        <button id="auth-modal-close" class="btn btn-ghost btn-icon btn-sm" title="Закрыть">
+          <i data-lucide="x" class="icon-sm"></i>
+        </button>
+      </div>
+
+      <div class="modal-body auth-modal-body">
+        <!-- Auth Tabs Switcher -->
+        <div class="auth-tabs">
+          <button type="button" class="auth-tab-btn active" data-auth-tab="login">Вход</button>
+          <button type="button" class="auth-tab-btn" data-auth-tab="register">Регистрация</button>
+        </div>
+
+        <!-- Login Form -->
+        <form id="auth-login-form" class="auth-form active">
+          <div class="form-group">
+            <label class="form-label" for="login-username">Логин (только латиница)</label>
+            <input type="text" id="login-username" class="form-control" placeholder="Введите логин" autocomplete="username" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="login-password">Пароль</label>
+            <input type="password" id="login-password" class="form-control" placeholder="Введите пароль" autocomplete="current-password" required>
+          </div>
+          <div id="login-error-msg" class="auth-error-msg" style="display:none;"></div>
+          <div style="margin-top: 18px;">
+            <button type="submit" id="login-submit-btn" class="btn btn-primary" style="width: 100%; justify-content: center; height: 38px;">
+              <i data-lucide="log-in" class="icon-sm"></i>
+              <span>Войти</span>
+            </button>
+          </div>
+        </form>
+
+        <!-- Register Form -->
+        <form id="auth-register-form" class="auth-form" style="display:none;">
+          <div class="form-group">
+            <label class="form-label" for="reg-username">Логин</label>
+            <input type="text" id="reg-username" class="form-control" placeholder="Логин (например, alex_bpm)" autocomplete="username" required>
+            <span class="field-hint">Только английские буквы, цифры и знаки _ . - (от 3 до 30 знаков)</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="reg-password">Пароль</label>
+            <input type="password" id="reg-password" class="form-control" placeholder="Введите сложный пароль" autocomplete="new-password" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="reg-password-confirm">Подтверждение пароля</label>
+            <input type="password" id="reg-password-confirm" class="form-control" placeholder="Повторите пароль" autocomplete="new-password" required>
+          </div>
+
+          <!-- Real-time Rules Checklist ("обо всех правилах юзеру надо сообщать") -->
+          <div class="password-rules-box">
+            <div class="rules-header">Требования к безопасности учетной записи:</div>
+            <ul class="rules-list" id="reg-rules-list">
+              <li id="rule-en-login" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Логин: только английские буквы, цифры и знаки _ . - (от 3 знаков)</span>
+              </li>
+              <li id="rule-en-pwd" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Пароль: только английские символы ASCII</span>
+              </li>
+              <li id="rule-len" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Длина пароля от 8 символов</span>
+              </li>
+              <li id="rule-case" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Заглавная (A-Z) и строчная (a-z) буква</span>
+              </li>
+              <li id="rule-digit-sym" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Минимум одна цифра (0-9) и спецсимвол (!@#$%^&*...)</span>
+              </li>
+              <li id="rule-no-match" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Пароль не совпадает с логином и не содержит его</span>
+              </li>
+              <li id="rule-confirm" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Пароли совпадают</span>
+              </li>
+            </ul>
+          </div>
+
+          <div id="reg-error-msg" class="auth-error-msg" style="display:none;"></div>
+
+          <div style="margin-top: 18px;">
+            <button type="submit" id="reg-submit-btn" class="btn btn-primary" style="width: 100%; justify-content: center; height: 38px;">
+              <i data-lucide="user-plus" class="icon-sm"></i>
+              <span>Зарегистрироваться</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Profile Settings Modal ──────────────────────────────────────────── -->
+  <div id="profile-modal" class="modal-overlay">
+    <div class="modal-box auth-modal-box">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i data-lucide="user-cog" class="icon" style="color: var(--accent-primary);"></i>
+          <span>Настройки профиля</span>
+        </div>
+        <button id="profile-modal-close" class="btn btn-ghost btn-icon btn-sm" title="Закрыть">
+          <i data-lucide="x" class="icon-sm"></i>
+        </button>
+      </div>
+
+      <div class="modal-body auth-modal-body">
+        <!-- Profile Tabs Switcher -->
+        <div class="auth-tabs">
+          <button type="button" class="auth-tab-btn active" data-profile-tab="password">
+            <i data-lucide="key" class="icon-xs"></i>
+            <span>Смена пароля</span>
+          </button>
+          <button type="button" class="auth-tab-btn" data-profile-tab="delete">
+            <i data-lucide="trash-2" class="icon-xs"></i>
+            <span>Удалить аккаунт</span>
+          </button>
+        </div>
+
+        <!-- Tab 1: Change Password Form -->
+        <form id="profile-password-form" class="auth-form active">
+          <div class="form-group">
+            <label class="form-label" for="profile-old-password">Текущий пароль</label>
+            <input type="password" id="profile-old-password" class="form-control" placeholder="Введите текущий пароль" autocomplete="current-password" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="profile-new-password">Новый пароль</label>
+            <input type="password" id="profile-new-password" class="form-control" placeholder="Введите новый сложный пароль" autocomplete="new-password" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="profile-new-password-confirm">Подтверждение нового пароля</label>
+            <input type="password" id="profile-new-password-confirm" class="form-control" placeholder="Повторите новый пароль" autocomplete="new-password" required>
+          </div>
+
+          <!-- Real-time Password Rules Checklist -->
+          <div class="password-rules-box">
+            <div class="rules-header">Требования к безопасности пароля:</div>
+            <ul class="rules-list" id="profile-rules-list">
+              <li id="prule-en-pwd" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Только английские символы ASCII</span>
+              </li>
+              <li id="prule-len" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Длина пароля от 8 символов</span>
+              </li>
+              <li id="prule-case" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Заглавная (A-Z) и строчная (a-z) буква</span>
+              </li>
+              <li id="prule-digit-sym" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Минимум одна цифра (0-9) и спецсимвол (!@#$%^&*...)</span>
+              </li>
+              <li id="prule-no-match" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Пароль не совпадает с логином и не содержит его</span>
+              </li>
+              <li id="prule-confirm" class="rule-item">
+                <i data-lucide="circle" class="rule-icon"></i>
+                <span>Пароли совпадают</span>
+              </li>
+            </ul>
+          </div>
+
+          <div id="profile-pwd-error-msg" class="auth-error-msg" style="display:none;"></div>
+
+          <div style="margin-top: 18px;">
+            <button type="submit" id="profile-pwd-submit-btn" class="btn btn-primary" style="width: 100%; justify-content: center; height: 38px;">
+              <i data-lucide="check" class="icon-sm"></i>
+              <span>Сохранить новый пароль</span>
+            </button>
+          </div>
+        </form>
+
+        <!-- Tab 2: Delete Account Form (Danger Zone) -->
+        <form id="profile-delete-form" class="auth-form" style="display:none;">
+          <div class="danger-zone-card">
+            <div class="danger-zone-header">
+              <i data-lucide="alert-triangle" class="danger-icon"></i>
+              <div>
+                <strong>Внимание: Это действие необратимо!</strong>
+                <p>При удалении аккаунта все ваши проекты, схемы BPMN, история переписок в чате и персональные файлы базы знаний будут безвозвратно удалены из базы данных.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 14px;">
+            <label class="form-label" for="profile-delete-password">Подтвердите удаление текущим паролем:</label>
+            <input type="password" id="profile-delete-password" class="form-control" placeholder="Введите ваш текущий пароль" autocomplete="current-password" required>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px;">
+            <label class="danger-confirm-label">
+              <input type="checkbox" id="profile-delete-confirm-check" required>
+              <span>Я понимаю последствия и подтверждаю полное удаление своего аккаунта и всех связанных данных.</span>
+            </label>
+          </div>
+
+          <div id="profile-del-error-msg" class="auth-error-msg" style="display:none;"></div>
+
+          <div style="margin-top: 18px;">
+            <button type="submit" id="profile-del-submit-btn" class="btn btn-danger" style="width: 100%; justify-content: center; height: 38px;">
+              <i data-lucide="trash-2" class="icon-sm"></i>
+              <span>Удалить аккаунт навсегда</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── DSL Documentation Modal ─────────────────────────────────────────── -->
+  <div id="dsl-docs-modal" class="modal-overlay">
+    <div class="modal-box dsl-docs-box">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i data-lucide="book-open" class="icon" style="color: var(--accent-primary);"></i>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span>Справочник по языку BPMN-as-Code (DSL)</span>
+            <span class="badge" style="font-size: 0.72rem; padding: 2px 7px;">Спецификация</span>
+          </div>
+        </div>
+        <button id="dsl-docs-close" class="btn btn-ghost btn-icon btn-sm" title="Закрыть">
+          <i data-lucide="x" class="icon-sm"></i>
+        </button>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="dsl-docs-tabs">
+        <button type="button" class="dsl-doc-tab-btn active" data-doc-tab="quickstart">
+          <i data-lucide="zap" class="icon-xs"></i>
+          <span>Основы и синтаксис</span>
+        </button>
+        <button type="button" class="dsl-doc-tab-btn" data-doc-tab="events">
+          <i data-lucide="play-circle" class="icon-xs"></i>
+          <span>События (Events)</span>
+        </button>
+        <button type="button" class="dsl-doc-tab-btn" data-doc-tab="tasks">
+          <i data-lucide="check-square" class="icon-xs"></i>
+          <span>Задачи и роли (Tasks & Roles)</span>
+        </button>
+        <button type="button" class="dsl-doc-tab-btn" data-doc-tab="gateways">
+          <i data-lucide="git-fork" class="icon-xs"></i>
+          <span>Шлюзы и ветвления</span>
+        </button>
+        <button type="button" class="dsl-doc-tab-btn" data-doc-tab="examples">
+          <i data-lucide="sparkles" class="icon-xs"></i>
+          <span>Примеры процессов</span>
+        </button>
+      </div>
+
+      <!-- Documentation Content Body -->
+      <div class="dsl-doc-content-wrap">
+        <!-- Section 1: Quickstart & Syntax -->
+        <div id="dsl-doc-quickstart" class="dsl-doc-section active">
+          <div class="dsl-doc-card">
+            <div class="dsl-doc-card-title">
+              <i data-lucide="info" class="icon-sm" style="color: var(--accent-primary);"></i>
+              <span>Структура файла диаграммы</span>
+            </div>
+            <p style="font-size: 0.83rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px;">
+              Диаграмма BPMN-as-Code описывается простым кодом. Каждый процесс начинается с имени, затем перечисляются элементы (события, задачи, шлюзы) и задаются связи между ними.
+            </p>
+            <div class="dsl-code-sample">process "Название бизнес-процесса"
+
+# 1. Объявление элементов (узлов диаграммы)
+start: req_started "Заявка поступила"
+task: check_data "Проверить корректность данных" service
+gateway: is_valid "Данные верны?" exclusive
+end: process_done "Процесс завершен"
+
+# 2. Описание связей (потоков управления)
+req_started -> check_data -> is_valid
+is_valid --[Да]--> process_done</div>
+          </div>
+
+          <div class="dsl-doc-card">
+            <div class="dsl-doc-card-title">
+              <i data-lucide="check" class="icon-sm" style="color: var(--accent-success, #10b981);"></i>
+              <span>Правила именования и синтаксиса</span>
+            </div>
+            <table class="dsl-doc-table">
+              <thead>
+                <tr>
+                  <th>Элемент</th>
+                  <th>Правило</th>
+                  <th>Пример</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>ID узлов</strong></td>
+                  <td>Латиница в <code>snake_case</code>, уникальные в рамках процесса</td>
+                  <td><code>order_received</code>, <code>check_balance</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Названия</strong></td>
+                  <td>В двойных кавычках <code>"..."</code>. Для задач используйте глаголы</td>
+                  <td><code>"Согласовать счет"</code>, <code>"Оплачено?"</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Связи</strong></td>
+                  <td>Стрелки <code>-></code>, цепочки <code>a -> b -> c</code></td>
+                  <td><code>start -> review -> gateway_ok</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Условия</strong></td>
+                  <td>Метки в квадратных скобках <code>--[Текст]--></code></td>
+                  <td><code>gateway_ok --[Да]--> approve_task</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Комментарии</strong></td>
+                  <td>Символ <code>#</code> в начале строки или после команды</td>
+                  <td><code># Основной поток процесса</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section 2: Events -->
+        <div id="dsl-doc-events" class="dsl-doc-section">
+          <div class="dsl-doc-card">
+            <div class="dsl-doc-card-title">
+              <i data-lucide="play-circle" class="icon-sm" style="color: var(--accent-primary);"></i>
+              <span>События (Start, End, Intermediate & Boundary)</span>
+            </div>
+            <table class="dsl-doc-table">
+              <thead>
+                <tr>
+                  <th>Тип события</th>
+                  <th>Синтаксис DSL</th>
+                  <th>Описание</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="dsl-badge-type">start</span></td>
+                  <td><code>start: id "Название"</code></td>
+                  <td>Стартовое событие процесса</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">start (message)</span></td>
+                  <td><code>start: id "Получен вебхук" message</code></td>
+                  <td>Старт по входящему сообщению / API</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">start (timer)</span></td>
+                  <td><code>start: id "Каждый понедельник 09:00" timer</code></td>
+                  <td>Старт по расписанию или таймеру</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">end</span></td>
+                  <td><code>end: id "Успешно завершено"</code></td>
+                  <td>Стандартное завершение ветки процесса</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">end (error)</span></td>
+                  <td><code>end: id "Ошибка авторизации" error</code></td>
+                  <td>Завершение ветки с ошибкой</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">end (terminate)</span></td>
+                  <td><code>end: id "Заказ отменен" terminate</code></td>
+                  <td>Принудительная остановка всего экземпляра процесса</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">catch</span></td>
+                  <td><code>catch: id "Ожидание оплаты" message</code></td>
+                  <td>Промежуточное ожидание внешнего события</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">throw</span></td>
+                  <td><code>throw: id "Отправка уведомления" signal</code></td>
+                  <td>Промежуточная генерация сигнала или события</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">boundary</span></td>
+                  <td><code>boundary: id "Таймаут 3 дня" timer on task_id</code></td>
+                  <td>Граничное событие на задаче (прерывание по таймеру/ошибке)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section 3: Tasks & Roles -->
+        <div id="dsl-doc-tasks" class="dsl-doc-section">
+          <div class="dsl-doc-card">
+            <div class="dsl-doc-card-title">
+              <i data-lucide="check-square" class="icon-sm" style="color: var(--accent-primary);"></i>
+              <span>Задачи и распределение по ролям (Swimlanes)</span>
+            </div>
+            <p style="font-size: 0.83rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px;">
+              Формат объявления задачи: <code>task: &lt;id&gt; "&lt;Название&gt;" [&lt;тип&gt;] [by "&lt;Роль&gt;"] [loop [parallel|sequential]]</code>.
+              Указание роли <code>by "..."</code> автоматически группирует задачи в дорожки соответствующих исполнителей.
+            </p>
+            <table class="dsl-doc-table">
+              <thead>
+                <tr>
+                  <th>Тип задачи</th>
+                  <th>Синтаксис</th>
+                  <th>Семантика</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="dsl-badge-type">user</span></td>
+                  <td><code>task: t1 "Проверить паспорт" user by "Оператор"</code></td>
+                  <td>Задача, выполняемая человеком через пользовательский интерфейс</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">service</span></td>
+                  <td><code>task: t2 "Списать баланс" service</code></td>
+                  <td>Автоматизированный сервис, веб-служба, обращение к БД или внешнему API</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">script</span></td>
+                  <td><code>task: t3 "Рассчитать скидку клиента" script</code></td>
+                  <td>Автоматический расчет или встроенный программный скрипт</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">send</span></td>
+                  <td><code>task: t4 "Отправить чек на email" send</code></td>
+                  <td>Отправка сообщения клиенту или другой системе</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">receive</span></td>
+                  <td><code>task: t5 "Ожидать подтверждение банка" receive</code></td>
+                  <td>Ожидание входящего подтверждения от внешнего участника</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">manual</span></td>
+                  <td><code>task: t6 "Упаковать посылку" manual by "Склад"</code></td>
+                  <td>Физическое действие без участия программной системы</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">businessrule</span></td>
+                  <td><code>task: t7 "Определить тариф по таблице" businessrule</code></td>
+                  <td>Принятие решения по таблице решений (DMN)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="dsl-doc-card">
+            <div class="dsl-doc-card-title">
+              <i data-lucide="layers" class="icon-sm" style="color: var(--accent-primary);"></i>
+              <span>Подпроцессы, данные и примечания</span>
+            </div>
+            <div class="dsl-code-sample">subprocess: sub1 "Обработка претензии" by "Юристы"
+call: global_auth "Единая авторизация SSO"
+data: client_doc "Скан паспорта"
+datastore: crm_db "База клиентов CRM"
+note: sla_note "SLA согласования не более 24ч" on manager_review</div>
+          </div>
+        </div>
+
+        <!-- Section 4: Gateways & Flows -->
+        <div id="dsl-doc-gateways" class="dsl-doc-section">
+          <div class="dsl-doc-card">
+            <div class="dsl-doc-card-title">
+              <i data-lucide="git-fork" class="icon-sm" style="color: var(--accent-primary);"></i>
+              <span>Шлюзы и логика ветвления</span>
+            </div>
+            <table class="dsl-doc-table">
+              <thead>
+                <tr>
+                  <th>Тип шлюза</th>
+                  <th>Синтаксис</th>
+                  <th>Поведение</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="dsl-badge-type">exclusive (XOR)</span></td>
+                  <td><code>gateway: is_ok "Проверка пройдена?" exclusive</code></td>
+                  <td>Исключающее «ИЛИ»: активируется ровно одна из исходящих веток по условию.</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">parallel (AND)</span></td>
+                  <td><code>gateway: fork_steps "Запуск проверок" parallel</code></td>
+                  <td>Параллельное «И»: запускает все исходящие ветки одновременно. Для слияния используется парный параллельный шлюз.</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">inclusive (OR)</span></td>
+                  <td><code>gateway: options "Выбор опций" inclusive</code></td>
+                  <td>Неисключающее «ИЛИ»: запускает одну, несколько или все ветки, чьи условия истинны.</td>
+                </tr>
+                <tr>
+                  <td><span class="dsl-badge-type">eventbased</span></td>
+                  <td><code>gateway: wait_event "Ожидание действия" eventbased</code></td>
+                  <td>Шлюз по событиям: процесс продолжает ход по той ветке, событие которой наступит первым.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="dsl-doc-card">
+            <div class="dsl-doc-card-title">
+              <i data-lucide="arrow-right" class="icon-sm" style="color: var(--accent-primary);"></i>
+              <span>Синтаксис стрелок и веток</span>
+            </div>
+            <div class="dsl-code-sample"># 1. Условные переходы из exclusive/inclusive шлюзов
+check_limit --[В пределах лимита]--> auto_approve
+check_limit --[Превышен]--> manager_review
+
+# 2. Поток по умолчанию (default flow)
+gateway_decision ==> default_action
+
+# 3. Парное разделение и слияние параллельных веток (fork & join)
+fork_check -> check_documents -> join_check
+fork_check -> check_credit_history -> join_check
+join_check -> issue_card</div>
+          </div>
+        </div>
+
+        <!-- Section 5: Process Examples -->
+        <div id="dsl-doc-examples" class="dsl-doc-section">
+          <!-- Example 1 -->
+          <div class="dsl-doc-card">
+            <div class="dsl-doc-card-title">
+              <i data-lucide="file-check" class="icon-sm" style="color: var(--accent-primary);"></i>
+              <span>Пример 1: Согласование договора с условием Да / Нет</span>
+            </div>
+            <div class="dsl-code-sample" id="sample-contract-dsl">process "Согласование договора"
+
+start: doc_uploaded "Договор загружен"
+task: legal_review "Правовая экспертиза" user by "Юрист"
+gateway: legal_decision "Договор согласован?" exclusive
+task: sign_doc "Подписание договора" user by "Генеральный директор"
+task: rework_doc "Отправить замечания автору" user by "Юрист"
+end: doc_signed "Договор подписан"
+end: doc_returned "Возвращен на доработку"
+
+doc_uploaded -> legal_review -> legal_decision
+legal_decision --[Да]--> sign_doc -> doc_signed
+legal_decision --[Нет]--> rework_doc -> doc_returned</div>
+            <div class="dsl-sample-actions">
+              <button type="button" class="btn btn-ghost btn-sm btn-copy-sample" data-target="sample-contract-dsl">
+                <i data-lucide="copy" class="icon-sm"></i>
+                <span>Скопировать</span>
+              </button>
+              <button type="button" class="btn btn-primary btn-sm btn-insert-sample" data-target="sample-contract-dsl">
+                <i data-lucide="arrow-down-left" class="icon-sm"></i>
+                <span>Вставить в редактор</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Example 2 -->
+          <div class="dsl-doc-card">
+            <div class="dsl-doc-card-title">
+              <i data-lucide="shopping-cart" class="icon-sm" style="color: var(--accent-primary);"></i>
+              <span>Пример 2: Обработка онлайн-заказа с параллельными ветками</span>
+            </div>
+            <div class="dsl-code-sample" id="sample-order-dsl">process "Обработка интернет-заказа"
+
+start: order_created "Заказ оформлен"
+task: verify_stock "Проверить остатки на складе" service
+gateway: in_stock "Товар в наличии?" exclusive
+end: cancel_out_of_stock "Заказ отменен из-за отсутствия" terminate
+
+task: pay_order "Списать оплату" service
+gateway: fork_fulfillment "Запуск обработки" parallel
+task: assemble_box "Сборка заказа" manual by "Склад"
+task: print_invoice "Печать накладной и чека" service
+gateway: join_fulfillment "Заказ скомплектован" parallel
+
+task: courier_delivery "Доставка курьером" user by "Курьер"
+end: order_delivered "Заказ вручен клиенту"
+
+order_created -> verify_stock -> in_stock
+in_stock --[Да]--> pay_order -> fork_fulfillment
+in_stock --[Нет]--> cancel_out_of_stock
+
+fork_fulfillment -> assemble_box -> join_fulfillment
+fork_fulfillment -> print_invoice -> join_fulfillment
+
+join_fulfillment -> courier_delivery -> order_delivered</div>
+            <div class="dsl-sample-actions">
+              <button type="button" class="btn btn-ghost btn-sm btn-copy-sample" data-target="sample-order-dsl">
+                <i data-lucide="copy" class="icon-sm"></i>
+                <span>Скопировать</span>
+              </button>
+              <button type="button" class="btn btn-primary btn-sm btn-insert-sample" data-target="sample-order-dsl">
+                <i data-lucide="arrow-down-left" class="icon-sm"></i>
+                <span>Вставить в редактор</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ── Cookie Consent Banner / Modal ──────────────────────────────────── -->
+  <div id="cookie-consent-banner" class="cookie-banner" style="display:none;">
+    <div class="cookie-content">
+      <div class="cookie-text-wrap">
+        <i data-lucide="shield-check" class="cookie-icon"></i>
+        <div class="cookie-text">
+          <strong>Использование файлов cookie</strong>
+          <p>Мы используем файлы cookie и локальное хранилище для авторизации, безопасного входа и сохранения ваших схем процессов и настроек интерфейса. Ознакомьтесь с <a href="/terms/" class="cookie-legal-link">Условиями использования</a> и <a href="/privacy/" class="cookie-legal-link">Политикой конфиденциальности</a>.</p>
+        </div>
+      </div>
+      <div class="cookie-actions">
+        <button id="cookie-accept-btn" class="btn btn-primary btn-sm">
+          <span>Принять все</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Mobile View Toggle (Visible only on <= 800px screens) -->
+  <nav id="mobile-view-toggle" class="mobile-view-toggle">
+    <button id="mobile-btn-panel" class="mobile-toggle-btn active" data-view="panel">
+      <i data-lucide="message-square" class="icon-sm"></i>
+      <span>Чат и Код</span>
+    </button>
+    <button id="mobile-btn-canvas" class="mobile-toggle-btn" data-view="canvas">
+      <i data-lucide="layout" class="icon-sm"></i>
+      <span>BPMN Холст</span>
+    </button>
+  </nav>
+
+  <!-- Vendor Scripts -->
+  <script src="{% static 'architect/vendor/bpmn-modeler.production.min.js' %}"></script>
+  <script src="{% static 'architect/vendor/compiler.js' %}?v=2.7"></script>
+  <script src="{% static 'architect/vendor/lucide.min.js' %}"></script>
+  <script>if (window.lucide) window.lucide.createIcons();</script>
+  <script src="{% static 'architect/vendor/jspdf.umd.min.js' %}"></script>
+  <script src="{% static 'architect/vendor/svg2pdf.umd.min.js' %}"></script>
+  <script src="{% static 'architect/vendor/marked.min.js' %}"></script>
+  <script src="{% static 'architect/vendor/prism.min.js' %}"></script>
+
+  <!-- App Script -->
+  <script src="{% static 'architect/js/app.js' %}?v=2.7"></script>
+</body>
+</html>
+

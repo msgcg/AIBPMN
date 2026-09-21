@@ -1,0 +1,42 @@
+<svg 
+  xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="50%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Background Squircle -->
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#bgGrad)" stroke="#312e81" stroke-width="1.5"/>
+  <!-- BPMN Nodes and Paths -->
+  <g filter="url(#neonGlow)" stroke="url(#glowGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Start Event Circle -->
+    <circle cx="16" cy="32" r="4.5" fill="#1e1b4b"/>
+    <!-- Path from Start to Gateway -->
+    <line x1="20.5" y1="32" x2="26" y2="32"/>
+    <!-- Gateway Diamond -->
+    <polygon points="30,27 35,32 30,37 25,32" fill="#1e1b4b"/>
+    <!-- Upper Branch to Task 1 -->
+    <path d="M 30,27 L 30,20 L 37,20"/>
+    <rect x="37" y="15" width="14" height="10" rx="3" fill="#1e1b4b"/>
+    <!-- Lower Branch to Task 2 -->
+    <path d="M 30,37 L 30,44 L 37,44"/>
+    <rect x="37" y="39" width="14" height="10" rx="3" fill="#1e1b4b"/>
+    <!-- Join to End Task / Merge -->
+    <path d="M 51,20 L 55,20 L 55,32 L 51,32"/>
+    <path d="M 51,44 L 55,44 L 55,32"/>
+  </g>
+</svg>
+

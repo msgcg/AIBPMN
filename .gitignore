@@ -1,0 +1,9 @@
+sources/
+.venv*/
+.env*
+*.sqlite3
+__pycache__/
+*.pyc
+staticfiles/
+static_collected/
+

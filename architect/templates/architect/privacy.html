@@ -1,0 +1,367 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru" class="legal-html">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Политика конфиденциальности — AIBPMN Architect</title>
+  <meta name="description" content="Политика конфиденциальности веб-сервиса AIBPMN Architect: обработка данных, использование cookie, защита паролей, взаимодействие с GigaChat и удаление аккаунта."/>
+  
+  <link rel="icon" type="image/svg+xml" href="{% static 'architect/icons/favicon.svg' %}"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="{% static 'architect/icons/favicon-32x32.png' %}"/>
+  <link rel="icon" type="image/png" sizes="16x16" href="{% static 'architect/icons/favicon-16x16.png' %}"/>
+  <link rel="shortcut icon" href="{% static 'architect/icons/favicon.ico' %}"/>
+  <link rel="manifest" href="/manifest.json"/>
+  <meta name="theme-color" content="#4f46e5"/>
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- App CSS for variables & theme -->
+  <link rel="stylesheet" href="{% static 'architect/css/app.css' %}?v=2.4"/>
+
+  <style>
+    html.legal-html,
+    html.legal-html body,
+    body.legal-page-wrap {
+      height: auto !important;
+      min-height: 100% !important;
+      overflow: visible !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+    }
+    .legal-page-wrap {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-app);
+      color: var(--text-primary);
+    }
+    .legal-header {
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+    .legal-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 700;
+      font-size: 1.15rem;
+    }
+    .legal-brand:hover {
+      color: var(--accent-primary);
+    }
+    .legal-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .legal-container {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+      flex: 1;
+      width: 100%;
+    }
+    .legal-hero {
+      margin-bottom: 36px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .legal-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: var(--accent-primary-light);
+      color: var(--accent-primary);
+      font-size: 0.78rem;
+      font-weight: 600;
+      border-radius: 9999px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(79, 70, 229, 0.2);
+    }
+    .legal-hero h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin: 0 0 10px;
+      color: var(--text-primary);
+      line-height: 1.25;
+    }
+    .legal-hero p {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+    .legal-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 24px 28px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .legal-section h2 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin: 0 0 14px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .legal-section h2 i {
+      color: var(--accent-primary);
+    }
+    .legal-section p, .legal-section li {
+      font-size: 0.92rem;
+      line-height: 1.65;
+      color: var(--text-secondary);
+      margin: 0 0 10px;
+    }
+    .legal-section ul {
+      margin: 8px 0 14px 20px;
+      padding: 0;
+    }
+    .legal-section strong {
+      color: var(--text-primary);
+    }
+    .cookie-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 0.88rem;
+    }
+    .cookie-table th, .cookie-table td {
+      border: 1px solid var(--border-color);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .cookie-table th {
+      background: var(--bg-surface-alt);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .cookie-table td code {
+      background: var(--bg-surface-alt);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      color: var(--accent-primary);
+    }
+    .legal-footer {
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      padding: 24px;
+      text-align: center;
+      font-size: 0.84rem;
+      color: var(--text-muted);
+    }
+    .legal-nav-links {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    .legal-nav-links a {
+      color: var(--accent-primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .legal-nav-links a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body class="legal-page-wrap">
+
+  <header class="legal-header">
+    <a href="/" class="legal-brand" title="На главную страницу редактора">
+      <i data-lucide="git-merge" class="icon" style="color:var(--accent-primary);"></i>
+      <span>AIBPMN Architect</span>
+    </a>
+    <div class="legal-header-actions">
+      <button id="legal-theme-btn" class="btn btn-ghost btn-icon btn-sm" title="Сменить тему">
+        <i data-lucide="sun-moon" class="icon-sm"></i>
+      </button>
+      <a href="/" class="btn btn-primary btn-sm" style="text-decoration:none;">
+        <i data-lucide="arrow-left" class="icon-sm"></i>
+        <span>Вернуться в редактор</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="legal-container">
+    <div class="legal-hero">
+      <div class="legal-badge">
+        <i data-lucide="shield" class="icon-xs"></i>
+        <span>Конфиденциальность данных</span>
+      </div>
+      <h1>Политика конфиденциальности (Privacy Policy)</h1>
+      <p>Действующая редакция от 1 сентября 2026 г. • Приложение AIBPMN Architect</p>
+    </div>
+
+    <div class="legal-section">
+      <h2>
+        <i data-lucide="database" class="icon"></i>
+        <span>1. Состав и цели обработки данных</span>
+      </h2>
+      <p>
+        Сервис <strong>AIBPMN Architect</strong> придерживается принципа минимизации данных и обрабатывает только ту информацию, которая строго необходима для функционирования среды моделирования:
+      </p>
+      <ul>
+        <li><strong>Учетные данные аккаунта:</strong> имя пользователя (логин) и криптографический хэш пароля (с использованием безопасных алгоритмов PBKDF2/SHA256 с индивидуальной солью). Пароли в открытом виде никогда не сохраняются и не передаются.</li>
+        <li><strong>Проекты и диаграммы процессов:</strong> названия проектов, исходный код процессов на языке DSL, скомпилированные спецификации BPMN 2.0 XML и метаданные версий.</li>
+        <li><strong>История диалогов с ИИ:</strong> запросы пользователя к архитектору процессов и сгенерированные ответы ассистента в рамках каждого чата.</li>
+        <li><strong>Файлы базы знаний:</strong> корпоративные правила, регламенты и справочные файлы (.md, .txt, .json, .csv), загружаемые пользователем в базу знаний. Файлы хранятся в защищенной базе данных приложения в формате Base64 и изолированы в рамках учетной записи.</li>
+      </ul>
+    </div>
+
+    <div class="legal-section">
+      <h2>
+        <i data-lucide="cookie" class="icon"></i>
+        <span>2. Использование файлов Cookie и Local Storage</span>
+      </h2>
+      <p>
+        Сервис использует исключительно функциональные и технические файлы cookie и записи локального хранилища браузера, необходимые для аутентификации и персонализации:
+      </p>
+      <table class="cookie-table">
+        <thead>
+          <tr>
+            <th>Имя параметра</th>
+            <th>Тип</th>
+            <th>Назначение</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>sessionid</code></td>
+            <td>HTTP-Cookie (HttpOnly)</td>
+            <td>Поддержание защищенной сессии авторизованного пользователя.</td>
+          </tr>
+          <tr>
+            <td><code>csrftoken</code></td>
+            <td>HTTP-Cookie / Header</td>
+            <td>Защита от межсайтовой подделки запросов (CSRF) в соответствии со стандартами Django.</td>
+          </tr>
+          <tr>
+            <td><code>aibpmn_theme</code></td>
+            <td>Local Storage</td>
+            <td>Сохранение выбранной цветовой темы интерфейса (тёмная / светлая).</td>
+          </tr>
+          <tr>
+            <td><code>aibpmn_cookie_consent</code></td>
+            <td>Local Storage</td>
+            <td>Сохранение факта ознакомления с уведомлением об использовании cookie.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Мы не используем сторонние рекламные трекеры, маркетинговые пиксели или системы перекрестного отслеживания.</p>
+    </div>
+
+    <div class="legal-section">
+      <h2>
+        <i data-lucide="cpu" class="icon"></i>
+        <span>3. Взаимодействие с внешними сервисами (GigaChat API)</span>
+      </h2>
+      <p>
+        Для выполнения генерации и оптимизации бизнес-процессов сервис отправляет запросы к официальному API модели <strong>GigaChat</strong> (ПАО Сбербанк).
+      </p>
+      <p>
+        В запрос передаются исключительно: текст запроса пользователя, фрагмент текущего DSL-кода процесса и системный контекст из загруженной базы знаний. Ваши учетные данные (логин, пароль, сессионные токены) во внешние языковые модели <strong>никогда не передаются</strong>.
+      </p>
+    </div>
+
+    <div class="legal-section">
+      <h2>
+        <i data-lucide="lock" class="icon"></i>
+        <span>4. Безопасность и хранение данных</span>
+      </h2>
+      <ul>
+        <li>Все данные хранятся в реляционной базе данных с разграничением прав доступа на уровне учетных записей (Row-Level Access).</li>
+        <li>Доступ к диаграммам и проектам других пользователей технически заблокирован на уровне бэкенд-валидации запросов.</li>
+        <li>Поддерживается защищенное соединение по протоколу HTTPS и защита сессионных cookie.</li>
+      </ul>
+    </div>
+
+    <div class="legal-section">
+      <h2>
+        <i data-lucide="user-check" class="icon"></i>
+        <span>5. Права пользователя и удаление информации</span>
+      </h2>
+      <p>
+        В соответствии с принципами законодательства о персональных данных (включая Федеральный закон № 152-ФЗ), вы обладаете следующими правами:
+      </p>
+      <ul>
+        <li><strong>Право на доступ и экспорт:</strong> вы можете скачать любые свои диаграммы в форматах BPMN 2.0 XML, DSL (.bac), SVG, PNG или PDF в любой момент.</li>
+        <li><strong>Право на изменение:</strong> изменение названия процессов, кода и смена пароля доступны в любое время.</li>
+        <li><strong>Право на забвение (полное удаление):</strong> в настройках профиля предусмотрена функция безвозвратного удаления аккаунта. При её активации аккаунт, все связанные проекты, схемы, сообщения чатов и загруженные файлы базы знаний удаляются из базы данных немедленно и безвозвратно.</li>
+      </ul>
+    </div>
+  </main>
+
+  <footer class="legal-footer">
+    <div class="legal-nav-links">
+      <a href="/terms/">Условия использования</a>
+      <span>•</span>
+      <a href="/privacy/">Политика конфиденциальности</a>
+      <span>•</span>
+      <a href="/">Редактор BPMN</a>
+    </div>
+    <div>AIBPMN Architect © 2026. Конфиденциальность и безопасность данных. Лицензия GNU GPLv3.</div>
+  </footer>
+
+  <script>
+    if (window.lucide) { window.lucide.createIcons(); }
+
+    // Synchronize Theme
+    const savedTheme = localStorage.getItem('aibpmn_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+
+    const themeBtn = document.getElementById('legal-theme-btn');
+    if (themeBtn) {
+      themeBtn.addEventListener('click', () => {
+        const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+        const next = cur === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('aibpmn_theme', next);
+      });
+    }
+
+    // Prevent Edge from opening new tab on middle-click or link navigation
+    document.addEventListener('auxclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (e.button !== 0) return;
+      const link = e.target.closest('a[href]');
+      if (!link) return;
+      const href = link.getAttribute('href');
+      if (!href) return;
+      if (href.startsWith('/') && !href.startsWith('//') && !link.hasAttribute('target') && !link.hasAttribute('download')) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.location.assign(href);
+      }
+    });
+  </script>
+</body>
+</html>
+
