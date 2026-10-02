@@ -30,6 +30,7 @@ urlpatterns = [
 
     # DSL Compilation / Validation
     path('api/compile/', views.api_compile, name='api_compile'),
+    path('api/dsl/analyze/', views.api_analyze_dsl, name='api_analyze_dsl'),
 
     # Authentication & Profile API
     path('api/auth/register/', views.api_register, name='api_register'),

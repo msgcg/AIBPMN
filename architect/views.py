@@ -20,6 +20,13 @@ from .services.knowledge_base import (
     compose_system_prompt,
     seed_user_knowledge_base
 )
+from .services.process_analyzer import (
+    parse_dsl_structure,
+    analyze_process_metrics,
+    generate_validation_report,
+    generate_proactive_questions,
+    extract_traceability,
+)
 
 INITIAL_DEMO_DSL = """process "Согласование командировки"
 
@@ -893,6 +900,9 @@ def api_generate(request):
                 'assistant_message': assistant_msg,
                 'guest_mode': True,
                 'attempts': result.get('attempts', 1),
+                'validation_report': result.get('validation_report'),
+                'proactive_questions': result.get('proactive_questions', []),
+                'traceability': result.get('traceability', []),
                 'error': error
             })
 
@@ -1007,6 +1017,9 @@ def api_generate(request):
             'user_message': user_msg.to_dict(),
             'assistant_message': assistant_msg.to_dict(),
             'attempts': result.get('attempts', 1),
+            'validation_report': result.get('validation_report'),
+            'proactive_questions': result.get('proactive_questions', []),
+            'traceability': result.get('traceability', []),
             'error': error
         })
 
@@ -1105,6 +1118,9 @@ def api_refine(request):
                 'user_message': user_msg,
                 'assistant_message': assistant_msg,
                 'guest_mode': True,
+                'validation_report': result.get('validation_report'),
+                'proactive_questions': result.get('proactive_questions', []),
+                'traceability': result.get('traceability', []),
                 'error': error
             })
 
@@ -1178,6 +1194,9 @@ def api_refine(request):
             'explanation': explanation,
             'user_message': user_msg.to_dict(),
             'assistant_message': assistant_msg.to_dict(),
+            'validation_report': result.get('validation_report'),
+            'proactive_questions': result.get('proactive_questions', []),
+            'traceability': result.get('traceability', []),
             'error': error
         })
 
@@ -1298,6 +1317,30 @@ def api_compile(request):
         return JsonResponse(result)
     except Exception as exc:
         return JsonResponse({'valid': False, 'error': str(exc)}, status=400)
+
+
+@csrf_exempt
+def api_analyze_dsl(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Только POST запрос'}, status=405)
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        dsl_code = data.get('dsl_code', '').strip()
+        source_text = data.get('source_text', '').strip()
+        structure = parse_dsl_structure(dsl_code)
+        metrics = analyze_process_metrics(structure)
+        report = generate_validation_report(structure)
+        questions = generate_proactive_questions(structure, source_text=source_text)
+        traceability = extract_traceability(dsl_code, source_text=source_text)
+        return JsonResponse({
+            'success': True,
+            'metrics': metrics,
+            'validation_report': report,
+            'proactive_questions': questions,
+            'traceability': traceability,
+        })
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
 
 
 # ─── Authentication API (Register, Login, Logout, Status) ─────────────────

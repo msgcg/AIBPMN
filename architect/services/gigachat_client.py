@@ -7,6 +7,13 @@ import requests
 from django.conf import settings
 from .knowledge_base import compose_system_prompt
 from .compiler_service import compile_dsl
+from .process_analyzer import (
+    parse_dsl_structure,
+    find_cycles_and_gaps,
+    generate_validation_report,
+    generate_proactive_questions,
+    extract_traceability,
+)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -92,6 +99,24 @@ class GigaChatService:
         return res_json["choices"][0]["message"]["content"]
 
     @classmethod
+    def extract_trace_hints(cls, text: str) -> tuple[list[dict] | None, str]:
+        if not text:
+            return None, text
+        pattern = r"```(?:trace|json:trace)\s*([\s\S]*?)\s*```"
+        m = re.search(pattern, text, re.IGNORECASE)
+        if m:
+            raw = m.group(1).strip()
+            clean_text = text[:m.start()].strip() + "\n" + text[m.end():].strip()
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return parsed, clean_text.strip()
+            except Exception:
+                pass
+            return None, clean_text.strip()
+        return None, text
+
+    @classmethod
     def extract_dsl_and_explanation(cls, text: str) -> tuple[str | None, str]:
         """
         Extracts DSL code from ```bac ... ``` or ```bpmn ... ``` and explanation.
@@ -100,6 +125,9 @@ class GigaChatService:
         if not text:
             return None, ""
 
+        # Clean trace block if present in explanation
+        _, text = cls.extract_trace_hints(text)
+
         # 1. Look for explicit ```bac or ```bpmn or ```dsl block
         tagged_pattern = r"```(?:bac|bpmn|dsl)\s*([\s\S]*?)\s*```"
         match = re.search(tagged_pattern, text, re.IGNORECASE)
@@ -107,6 +135,7 @@ class GigaChatService:
             candidate = match.group(1).strip()
             if "process " in candidate or any(k in candidate for k in ["start:", "task:", "gateway:", "end:", "->"]):
                 explanation = text[:match.start()].strip() + "\n" + text[match.end():].strip()
+                _, explanation = cls.extract_trace_hints(explanation)
                 return candidate, explanation.strip()
 
         # 2. Look for generic code blocks containing a process definition
@@ -115,6 +144,7 @@ class GigaChatService:
             candidate = m.group(1).strip()
             if "process " in candidate and any(k in candidate for k in ["start:", "task:", "gateway:", "end:", "->"]):
                 explanation = text[:m.start()].strip() + "\n" + text[m.end():].strip()
+                _, explanation = cls.extract_trace_hints(explanation)
                 return candidate, explanation.strip()
 
         # 3. If model didn't use markdown code fences, check if text contains an explicit process block
@@ -124,6 +154,7 @@ class GigaChatService:
                 candidate = text[idx:].strip()
                 if any(k in candidate for k in ["start:", "task:", "gateway:", "end:", "->"]):
                     explanation = text[:idx].strip()
+                    _, explanation = cls.extract_trace_hints(explanation)
                     return candidate, explanation.strip()
 
         # Pure conversational response / consultation without diagram modification
@@ -153,11 +184,15 @@ class GigaChatService:
         initial_explanation = ""
         last_dsl = ""
         last_error = None
+        extracted_hints = None
 
         while attempt < max_retries:
             attempt += 1
             raw_response = cls._call_completions(messages, temperature=0.3)
-            dsl, explanation = cls.extract_dsl_and_explanation(raw_response)
+            trace_hints, clean_raw = cls.extract_trace_hints(raw_response)
+            if trace_hints:
+                extracted_hints = trace_hints
+            dsl, explanation = cls.extract_dsl_and_explanation(clean_raw)
 
             if attempt == 1:
                 initial_explanation = explanation
@@ -172,7 +207,10 @@ class GigaChatService:
                     'explanation': final_exp,
                     'content': final_exp,
                     'bpmn_xml': None,
-                    'attempts': attempt
+                    'attempts': attempt,
+                    'validation_report': None,
+                    'proactive_questions': [],
+                    'traceability': []
                 }
 
             last_dsl = dsl
@@ -181,6 +219,28 @@ class GigaChatService:
             compile_res = compile_dsl(dsl)
             if compile_res.get('valid'):
                 final_exp = initial_explanation or explanation
+
+                # Process validation and traceability analysis
+                structure = parse_dsl_structure(dsl)
+                report = generate_validation_report(structure)
+                questions = generate_proactive_questions(structure, source_text=prompt)
+                traceability = extract_traceability(dsl, prompt, extracted_hints)
+                cycles, gaps = find_cycles_and_gaps(structure)
+
+                if gaps and "обнаружен логический разрыв" not in final_exp.lower():
+                    gap_alerts = "\n\n".join(
+                        f"⚠️ **Обнаружен логический разрыв:** {g}. Связь намеренно не построена."
+                        for g in gaps
+                    )
+                    final_exp = f"{gap_alerts}\n\n{final_exp.strip()}"
+
+                if "Отчет валидации процесса" not in final_exp and "отчет валидации" not in final_exp.lower():
+                    final_exp = final_exp.strip() + f"\n\n{report}"
+
+                if questions and "Уточняющие вопросы" not in final_exp and "уточняющие вопросы" not in final_exp.lower():
+                    q_lines = "\n".join(f"- {q}" for q in questions)
+                    final_exp = final_exp.strip() + f"\n\n❓ **Уточняющие вопросы по регламенту:**\n{q_lines}"
+
                 return {
                     'success': True,
                     'has_dsl': True,
@@ -190,7 +250,10 @@ class GigaChatService:
                     'bpmn_xml': compile_res.get('xml', ''),
                     'node_count': compile_res.get('node_count', 0),
                     'flow_count': compile_res.get('flow_count', 0),
-                    'attempts': attempt
+                    'attempts': attempt,
+                    'validation_report': report,
+                    'proactive_questions': questions,
+                    'traceability': traceability
                 }
 
             # If compilation failed, ask model to correct its code with specific tips
@@ -225,7 +288,10 @@ class GigaChatService:
             'explanation': initial_explanation,
             'content': initial_explanation,
             'error': f"Не удалось автоматически устранить ошибку компиляции за {max_retries} попыток: {last_error}",
-            'attempts': max_retries
+            'attempts': max_retries,
+            'validation_report': None,
+            'proactive_questions': [],
+            'traceability': []
         }
 
     @classmethod
@@ -257,11 +323,15 @@ class GigaChatService:
         initial_explanation = ""
         last_dsl = current_dsl
         last_error = None
+        extracted_hints = None
 
         while attempt < max_retries:
             attempt += 1
             raw_response = cls._call_completions(messages, temperature=0.25)
-            dsl, explanation = cls.extract_dsl_and_explanation(raw_response)
+            trace_hints, clean_raw = cls.extract_trace_hints(raw_response)
+            if trace_hints:
+                extracted_hints = trace_hints
+            dsl, explanation = cls.extract_dsl_and_explanation(clean_raw)
 
             if attempt == 1:
                 initial_explanation = explanation
@@ -276,7 +346,10 @@ class GigaChatService:
                     'explanation': final_exp,
                     'content': final_exp,
                     'bpmn_xml': None,
-                    'attempts': attempt
+                    'attempts': attempt,
+                    'validation_report': None,
+                    'proactive_questions': [],
+                    'traceability': []
                 }
 
             last_dsl = dsl
@@ -284,6 +357,28 @@ class GigaChatService:
             compile_res = compile_dsl(dsl)
             if compile_res.get('valid'):
                 final_exp = initial_explanation or explanation
+
+                # Process validation and traceability analysis
+                structure = parse_dsl_structure(dsl)
+                report = generate_validation_report(structure)
+                questions = generate_proactive_questions(structure, source_text=instruction)
+                traceability = extract_traceability(dsl, instruction, extracted_hints)
+                cycles, gaps = find_cycles_and_gaps(structure)
+
+                if gaps and "обнаружен логический разрыв" not in final_exp.lower():
+                    gap_alerts = "\n\n".join(
+                        f"⚠️ **Обнаружен логический разрыв:** {g}. Связь намеренно не построена."
+                        for g in gaps
+                    )
+                    final_exp = f"{gap_alerts}\n\n{final_exp.strip()}"
+
+                if "Отчет валидации процесса" not in final_exp and "отчет валидации" not in final_exp.lower():
+                    final_exp = final_exp.strip() + f"\n\n{report}"
+
+                if questions and "Уточняющие вопросы" not in final_exp and "уточняющие вопросы" not in final_exp.lower():
+                    q_lines = "\n".join(f"- {q}" for q in questions)
+                    final_exp = final_exp.strip() + f"\n\n❓ **Уточняющие вопросы по регламенту:**\n{q_lines}"
+
                 return {
                     'success': True,
                     'has_dsl': True,
@@ -293,7 +388,10 @@ class GigaChatService:
                     'bpmn_xml': compile_res.get('xml', ''),
                     'node_count': compile_res.get('node_count', 0),
                     'flow_count': compile_res.get('flow_count', 0),
-                    'attempts': attempt
+                    'attempts': attempt,
+                    'validation_report': report,
+                    'proactive_questions': questions,
+                    'traceability': traceability
                 }
 
             last_error = compile_res.get('error', 'Синтаксическая ошибка')
@@ -325,6 +423,9 @@ class GigaChatService:
             'explanation': initial_explanation,
             'content': initial_explanation,
             'error': f"Ошибка после доработки: {last_error}",
-            'attempts': max_retries
+            'attempts': max_retries,
+            'validation_report': None,
+            'proactive_questions': [],
+            'traceability': []
         }
 

@@ -14,6 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let compileTimer = null;
   let visualSyncTimer = null;
   let lastSourceOfChange = 'init'; // 'code' | 'visual' | 'ai' | 'loaded'
+  let activeTraceElementId = null;
+  let currentTraceability = [];
+  let lastUserPromptText = '';
 
   // ── Prism BPMN-as-Code Syntax Grammar ─────────────────────────────────
   if (window.Prism) {
@@ -289,8 +292,29 @@ document.addEventListener('DOMContentLoaded', () => {
       keyboard: { bindTo: document }
     });
     initBpmnCanvasTouchHandler(modeler);
+    initCanvasSelectionTracking(modeler);
   } else {
     console.error('BpmnJS library is not loaded');
+  }
+
+  function initCanvasSelectionTracking(modelerInstance) {
+    if (!modelerInstance) return;
+    modelerInstance.on('selection.changed', (e) => {
+      if (e.newSelection && e.newSelection.length > 0) {
+        const sel = e.newSelection[0];
+        if (sel.id && sel.type !== 'bpmn:Process' && sel.type !== 'bpmn:Collaboration') {
+          onCanvasElementSelected(sel.id);
+        }
+      } else {
+        highlightTraceInChat(null);
+      }
+    });
+
+    modelerInstance.on('element.click', (e) => {
+      if (e.element && e.element.id && e.element.type !== 'bpmn:Process' && e.element.type !== 'bpmn:Collaboration') {
+        onCanvasElementSelected(e.element.id);
+      }
+    });
   }
 
   // ── Touch & Gesture Handler for BPMN Canvas (Mobile & Tablets) ─────────
@@ -760,6 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
               updateLineNumbers();
               updateDslHighlight();
             }
+            updateTraceability();
             showSyncPill();
             setTimeout(() => { codeFromVisual = false; }, 300);
           }
@@ -799,6 +824,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (result && (result.valid || (result.xml && !result.error))) {
         hideError();
         loadIntoModeler(result.xml);
+        updateTraceability();
         return { valid: true, xml: result.xml };
       } else {
         const lineStr = (result && result.line) ? `[Строка ${result.line}] ` : '';
@@ -910,6 +936,13 @@ document.addEventListener('DOMContentLoaded', () => {
         codeEditor.dispatchEvent(new Event('input'));
       }
     });
+
+    codeEditor.addEventListener('click', onEditorCursorChange);
+    codeEditor.addEventListener('keyup', (e) => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) {
+        onEditorCursorChange();
+      }
+    });
   }
 
   // ── Unified Tabs Navigation (Chat / DSL / XML) ────────────────────────
@@ -936,6 +969,7 @@ document.addEventListener('DOMContentLoaded', () => {
               updateLineNumbers();
               updateDslHighlight();
             }
+            updateTraceability();
             showSyncPill();
             setTimeout(() => { codeFromVisual = false; }, 300);
           }
@@ -943,6 +977,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       updateLineNumbers();
       updateDslHighlight();
+      if (activeTraceElementId) {
+        highlightTraceInEditor(activeTraceElementId);
+      }
+    } else if (tabId === 'tab-chat') {
+      if (activeTraceElementId) {
+        highlightTraceInChat(activeTraceElementId);
+      }
     }
   }
 
@@ -1158,12 +1199,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const fileChipMd = `\n\n📎 *Прикреплен файл:* \`${escapeHtml(currentAttachedFile.name)}\` (${formatFileSize(currentAttachedFile.size)})`;
         bubbleText = (prompt ? prompt : 'Построй процесс на основе прикрепленного документа') + fileChipMd;
       }
+      lastUserPromptText = prompt || bubbleText;
 
       const userBubble = appendChatMessage({
         role: 'user',
         content: bubbleText,
         created_at: new Date().toLocaleTimeString()
       });
+      if (userBubble) {
+        userBubble.dataset.rawContent = bubbleText;
+      }
       if (promptInput) promptInput.value = '';
 
       // Reset attached file state
@@ -1225,6 +1270,11 @@ document.addEventListener('DOMContentLoaded', () => {
           updateStatusBadge('err', 'Сбой анализа');
         } else {
           appendChatMessage(res.assistant_message);
+          if (res.traceability) {
+            updateTraceability(res.traceability);
+          } else {
+            updateTraceability();
+          }
           if (res.has_dsl && res.dsl_code && codeEditor) {
             codeEditor.value = res.dsl_code;
             updateLineNumbers();
@@ -1271,26 +1321,302 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ── Validation Report & Proactive Questions Cards ──────────────────────
+  function formatValidationReportCard(reportText) {
+    const lines = reportText.split('\n').map(l => l.trim()).filter(l => l.startsWith('-') || l.startsWith('*'));
+    const listItems = lines.map(l => {
+      const clean = l.replace(/^[-*]\s*/, '');
+      return `<li>${escapeHtml(clean).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')}</li>`;
+    }).join('');
+    return `
+      <div class="validation-report-card">
+        <div class="report-title">
+          <i data-lucide="shield-check" class="icon"></i>
+          <span>Отчет валидации процесса</span>
+        </div>
+        <ul>${listItems}</ul>
+      </div>
+    `;
+  }
+
+  function formatProactiveQuestionsCard(questionsText) {
+    const lines = questionsText.split('\n').map(l => l.trim()).filter(l => l.startsWith('-') || l.startsWith('*') || /^\d+\./.test(l));
+    const listItems = lines.map(l => {
+      const clean = l.replace(/^[-*\d\.]\s*/, '');
+      return `<li>${escapeHtml(clean).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')}</li>`;
+    }).join('');
+
+    const chips = [];
+    const lower = questionsText.toLowerCase();
+    if (lower.includes('отрицательн') || lower.includes('отказ') || lower.includes('решени') || lower.includes('шлюз')) {
+      chips.push('<button type="button" class="proactive-chip" data-answer="При отказе заявка завершается со статусом Отклонено">Отказ и завершение</button>');
+      chips.push('<button type="button" class="proactive-chip" data-answer="При замечаниях заявка возвращается инициатору на доработку">Возврат на доработку</button>');
+    }
+    if (lower.includes('роль') || lower.includes('подразделен') || lower.includes('отвечает') || lower.includes('кто')) {
+      chips.push('<button type="button" class="proactive-chip" data-answer="Задачу выполняет Руководитель отдела">Руководитель отдела</button>');
+      chips.push('<button type="button" class="proactive-chip" data-answer="Задачу выполняет Бухгалтерия">Бухгалтерия</button>');
+    }
+    if (lower.includes('разрыв') || lower.includes('связывает') || lower.includes('переход') || lower.includes('предшествующ') || lower.includes('инициирует')) {
+      chips.push('<button type="button" class="proactive-chip" data-answer="После завершения первого этапа сразу запускается следующий этап">Прямой переход</button>');
+      chips.push('<button type="button" class="proactive-chip" data-answer="Переход выполняется только после проверки руководителем">Переход после проверки</button>');
+    }
+    chips.push('<button type="button" class="proactive-chip" data-answer="Доработай схему с учетом стандартного регламента">Стандартный регламент</button>');
+
+    return `
+      <div class="proactive-questions-card">
+        <div class="questions-title">
+          <i data-lucide="help-circle" class="icon"></i>
+          <span>Уточняющие вопросы по регламенту</span>
+        </div>
+        <ul>${listItems}</ul>
+        <div class="chips-container">${chips.join('')}</div>
+      </div>
+    `;
+  }
+
   // ── Markdown Formatter ────────────────────────────────────────────────
   function renderMarkdown(mdText) {
     if (!mdText) return '';
+
+    let text = mdText;
+    let reportCardHtml = '';
+    let questionsCardHtml = '';
+
+    // Extract validation report block
+    const reportMatch = text.match(/📊\s*\*\*Отчет валидации процесса:\*\*([\s\S]*?)(?=(?:❓\s*\*\*|```|$))/i);
+    if (reportMatch) {
+      reportCardHtml = formatValidationReportCard(reportMatch[1]);
+      text = text.replace(reportMatch[0], '{{VALIDATION_REPORT_PLACEHOLDER}}');
+    }
+
+    // Extract proactive questions block
+    const questionsMatch = text.match(/❓\s*\*\*Уточняющие вопросы по регламенту:\*\*([\s\S]*?)(?=(?:📊\s*\*\*|```|$))/i);
+    if (questionsMatch) {
+      questionsCardHtml = formatProactiveQuestionsCard(questionsMatch[1]);
+      text = text.replace(questionsMatch[0], '{{PROACTIVE_QUESTIONS_PLACEHOLDER}}');
+    }
+
+    let parsedHtml = '';
     if (window.marked && typeof window.marked.parse === 'function') {
       try {
-        return window.marked.parse(mdText, { breaks: true, gfm: true });
+        parsedHtml = window.marked.parse(text, { breaks: true, gfm: true });
       } catch (e) {
         console.warn('Marked parse error:', e);
       }
     }
-    // Safe built-in fallback parser
-    let html = escapeHtml(mdText);
-    html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-    html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-    html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-    html = html.replace(/\*\*([^\*]+)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/\*([^\*]+)\*/g, '<em>$1</em>');
-    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-    html = html.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`).join('');
+    if (!parsedHtml) {
+      let html = escapeHtml(text);
+      html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+      html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+      html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+      html = html.replace(/\*\*([^\*]+)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*([^\*]+)\*/g, '<em>$1</em>');
+      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+      parsedHtml = html.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`).join('');
+    }
+
+    if (reportCardHtml) {
+      parsedHtml = parsedHtml.replace('<p>{{VALIDATION_REPORT_PLACEHOLDER}}</p>', reportCardHtml).replace('{{VALIDATION_REPORT_PLACEHOLDER}}', reportCardHtml);
+    }
+    if (questionsCardHtml) {
+      parsedHtml = parsedHtml.replace('<p>{{PROACTIVE_QUESTIONS_PLACEHOLDER}}</p>', questionsCardHtml).replace('{{PROACTIVE_QUESTIONS_PLACEHOLDER}}', questionsCardHtml);
+    }
+
+    return parsedHtml;
+  }
+
+  // ── Traceability & Cross-Synchronization (Diagram <-> Code <-> Chat) ──
+  function extractLocalTraceability(dslText, promptText) {
+    if (!dslText) return [];
+    const lines = dslText.split('\n');
+    const nodes = [];
+
+    const nodeRegex = /^(start|end|catch|throw|boundary|task|gateway|gate|subprocess|call):\s*([a-zA-Z0-9_]+)\s*(?:"([^"]*)")?(.*)$/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const clean = lines[i].split('#')[0].trim();
+      const m = clean.match(nodeRegex);
+      if (m) {
+        const ntype = m[1] === 'gate' ? 'gateway' : m[1];
+        const nid = m[2];
+        const nlabel = m[3] || nid;
+        const rest = m[4] || '';
+        const laneM = rest.match(/\bin\s+([a-zA-Z0-9_]+)/);
+        nodes.push({
+          id: nid,
+          type: ntype,
+          label: nlabel,
+          lane: laneM ? laneM[1] : '',
+          line: i + 1,
+          quote: ''
+        });
+      }
+    }
+
+    const sentences = (promptText || lastUserPromptText || '')
+      .split(/[\r\n]+|[.!?]+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 3);
+
+    nodes.forEach(node => {
+      if (sentences.length > 0) {
+        const words = (node.label.match(/[a-zA-Zа-яА-ЯёЁ0-9]{3,}/g) || []).map(w => w.toLowerCase());
+        let bestScore = 0;
+        let bestSentence = '';
+        sentences.forEach(sent => {
+          const sentLower = sent.toLowerCase();
+          const score = words.filter(w => sentLower.includes(w)).length;
+          if (score > bestScore) {
+            bestScore = score;
+            bestSentence = sent;
+          }
+        });
+        node.quote = (bestScore > 0 && bestSentence) ? bestSentence : node.label;
+      } else {
+        node.quote = node.label;
+      }
+    });
+
+    return nodes;
+  }
+
+  function updateTraceability(newTrace) {
+    if (Array.isArray(newTrace) && newTrace.length > 0) {
+      currentTraceability = newTrace;
+    } else {
+      const code = codeEditor ? codeEditor.value : '';
+      currentTraceability = extractLocalTraceability(code, lastUserPromptText);
+    }
+    refreshChatTraceQuotes();
+  }
+
+  function highlightQuotesInUserText(text, traceability) {
+    if (!text) return '';
+    let html = renderMarkdown(text);
+    if (!traceability || traceability.length === 0) return html;
+
+    const quotes = traceability
+      .filter(t => t.quote && t.quote.trim().length >= 4)
+      .sort((a, b) => b.quote.length - a.quote.length);
+
+    quotes.forEach(t => {
+      const q = t.quote.trim();
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(?<!<[^>]*)(${escaped})(?![^<]*>)`, 'gi');
+      html = html.replace(regex, `<mark class="trace-quote" data-element-id="${t.id}" title="Кликните для подсветки на схеме: ${escapeHtml(t.label || t.id)}">$1</mark>`);
+    });
+
     return html;
+  }
+
+  function refreshChatTraceQuotes() {
+    if (!chatContainer || !currentTraceability || currentTraceability.length === 0) return;
+    const userBubbles = chatContainer.querySelectorAll('.chat-bubble.user');
+    userBubbles.forEach(b => {
+      const raw = b.dataset.rawContent;
+      if (raw) {
+        const body = b.querySelector('.chat-bubble-body');
+        if (body) {
+          body.innerHTML = highlightQuotesInUserText(raw, currentTraceability);
+        }
+      }
+    });
+  }
+
+  function selectElementOnCanvas(elementId, center = true) {
+    if (!modeler || !elementId) return;
+    try {
+      const elementRegistry = modeler.get('elementRegistry');
+      const selection = modeler.get('selection');
+      const canvas = modeler.get('canvas');
+      const el = elementRegistry.get(elementId);
+      if (el) {
+        selection.set([el]);
+        if (center && typeof canvas.scrollToElement === 'function') {
+          canvas.scrollToElement(el);
+        }
+      }
+    } catch (err) {
+      console.warn('Canvas select element error:', err);
+    }
+  }
+
+  function findDslLineForElement(elementId) {
+    if (!codeEditor || !codeEditor.value || !elementId) return -1;
+    const lines = codeEditor.value.split('\n');
+    const targetPattern = new RegExp(`^(?:start|end|catch|throw|boundary|task|gateway|gate|subprocess|call):\\s*${elementId}\\b`);
+    for (let i = 0; i < lines.length; i++) {
+      const clean = lines[i].split('#')[0].trim();
+      if (targetPattern.test(clean)) {
+        return i + 1;
+      }
+    }
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(elementId)) {
+        return i + 1;
+      }
+    }
+    return -1;
+  }
+
+  function highlightLineInEditor(lineNumber) {
+    if (!codeEditor || lineNumber < 1) return;
+    const lines = codeEditor.value.split('\n');
+    if (lineNumber > lines.length) return;
+
+    let charStart = 0;
+    for (let i = 0; i < lineNumber - 1; i++) {
+      charStart += lines[i].length + 1;
+    }
+    const charEnd = charStart + lines[lineNumber - 1].length;
+
+    const lineHeight = 21;
+    const targetScrollTop = (lineNumber - 1) * lineHeight - codeEditor.clientHeight / 2 + lineHeight;
+    codeEditor.scrollTop = Math.max(0, targetScrollTop);
+
+    codeEditor.setSelectionRange(charStart, charEnd);
+  }
+
+  function highlightTraceInChat(elementId) {
+    if (!chatContainer) return;
+    chatContainer.querySelectorAll('.trace-quote.active').forEach(el => el.classList.remove('active'));
+    if (!elementId) return;
+
+    const targetQuotes = chatContainer.querySelectorAll(`.trace-quote[data-element-id="${elementId}"]`);
+    if (targetQuotes.length > 0) {
+      const lastQuote = targetQuotes[targetQuotes.length - 1];
+      lastQuote.classList.add('active');
+      lastQuote.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  function highlightTraceInEditor(elementId) {
+    if (!codeEditor || !elementId) return;
+    const lineNum = findDslLineForElement(elementId);
+    if (lineNum > 0) {
+      highlightLineInEditor(lineNum);
+    }
+  }
+
+  function onCanvasElementSelected(elementId) {
+    activeTraceElementId = elementId;
+    highlightTraceInChat(elementId);
+    highlightTraceInEditor(elementId);
+  }
+
+  function onEditorCursorChange() {
+    if (!codeEditor || codeFromVisual) return;
+    const pos = codeEditor.selectionStart;
+    const textBefore = codeEditor.value.slice(0, pos);
+    const lineIdx = textBefore.split('\n').length - 1;
+    const lineText = (codeEditor.value.split('\n')[lineIdx] || '').split('#')[0].trim();
+    const m = lineText.match(/^(?:start|end|catch|throw|boundary|task|gateway|gate|subprocess|call):\s*([a-zA-Z0-9_]+)/);
+    if (m) {
+      const elId = m[1];
+      activeTraceElementId = elId;
+      selectElementOnCanvas(elId, false);
+      highlightTraceInChat(elId);
+    }
   }
 
   // ── Generation Indicator ───────────────────────────────────────────────
@@ -1366,6 +1692,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       } else {
         appendChatMessage(res.assistant_message);
+        if (res.traceability) {
+          updateTraceability(res.traceability);
+        } else {
+          updateTraceability();
+        }
         if (res.has_dsl && res.dsl_code && codeEditor) {
           codeEditor.value = res.dsl_code;
           updateLineNumbers();
@@ -1441,8 +1772,13 @@ document.addEventListener('DOMContentLoaded', () => {
       explanationHtml = `<div class="chat-bubble-explanation">${renderMarkdown(msg.explanation)}</div>`;
     }
 
+    if (msg.role === 'user') {
+      bubble.dataset.rawContent = msg.content || '';
+      if (msg.content) lastUserPromptText = msg.content;
+    }
+
     const formattedContent = (!msg.is_error)
-      ? renderMarkdown(msg.content)
+      ? (msg.role === 'user' ? highlightQuotesInUserText(msg.content, currentTraceability) : renderMarkdown(msg.content))
       : `<p>${escapeHtml(msg.content).replace(/\n/g, '<br/>')}</p>`;
 
     bubble.innerHTML = `
@@ -1495,6 +1831,37 @@ document.addEventListener('DOMContentLoaded', () => {
     chatContainer.scrollTop = chatContainer.scrollHeight;
     refreshIcons();
     return bubble;
+  }
+
+  if (chatContainer) {
+    chatContainer.addEventListener('click', (e) => {
+      // 1. Click on trace quote in user chat message
+      const quote = e.target.closest('.trace-quote');
+      if (quote) {
+        const elId = quote.dataset.elementId;
+        if (elId) {
+          activeTraceElementId = elId;
+          selectElementOnCanvas(elId, true);
+          highlightTraceInEditor(elId);
+          highlightTraceInChat(elId);
+        }
+        return;
+      }
+
+      // 2. Click on proactive question quick-reply chip
+      const chip = e.target.closest('.proactive-chip');
+      if (chip) {
+        const answer = chip.dataset.answer || chip.textContent.trim();
+        if (promptInput) {
+          promptInput.value = answer;
+          promptInput.focus();
+          if (generateBtn && !generateBtn.disabled && !isGenerating) {
+            generateBtn.click();
+          }
+        }
+        return;
+      }
+    });
   }
 
   async function deleteMessages(ids, clearAll = false) {
@@ -1913,7 +2280,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (chatContainer) chatContainer.innerHTML = '';
         if (data.diagram.messages) {
+          const userMsgs = data.diagram.messages.filter(m => m.role === 'user');
+          if (userMsgs.length > 0) {
+            lastUserPromptText = userMsgs[userMsgs.length - 1].content || '';
+          }
           data.diagram.messages.forEach(appendChatMessage);
+          updateTraceability();
         }
       }
     } catch (e) {

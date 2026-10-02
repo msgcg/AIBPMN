@@ -69,3 +69,25 @@ s -> e
         self.assertTrue(status.get('ok'), f"GigaChat status check failed: {status.get('error')}")
         self.assertEqual(status.get('model'), 'GigaChat-3-Ultra')
 
+    def test_logical_gap_detection_and_warning(self):
+        from unittest.mock import patch
+        mock_response = """Обнаружен процесс с разорванной логикой:
+```bac
+process "Процесс с разрывом"
+start: s "Подача заявки"
+task: t1 "Оформление заявки"
+task: t2 "Выплата компенсации"
+end: e "Завершено"
+
+s -> t1
+t2 -> e
+```
+В описании нарушена логика."""
+        with patch.object(GigaChatService, '_call_completions', return_value=mock_response):
+            result = GigaChatService.generate_diagram("Пользователь подает заявку, а потом внезапно выплата", max_retries=1)
+            self.assertTrue(result['success'])
+            self.assertIn("⚠️ **Обнаружен логический разрыв:**", result['explanation'])
+            self.assertIn("Связь намеренно не построена", result['explanation'])
+            self.assertIn("разрыв", result['validation_report'])
+            self.assertTrue(any("связывает" in q or "инициирует" in q for q in result['proactive_questions']))
+

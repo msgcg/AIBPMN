@@ -864,7 +864,8 @@ var BpmnAsCode = (() => {
       levelMaxWidth.set(lv, maxW);
     }
     const hasPools = pools.length > 0;
-    const xOffset = hasPools || hasLanes ? PADDING + POOL_HEADER + 20 : PADDING;
+    const LANE_HEADER = 30;
+    const xOffset = hasLanes ? PADDING + POOL_HEADER + LANE_HEADER + 60 : hasPools ? PADDING + POOL_HEADER + 50 : PADDING;
     const levelX = /* @__PURE__ */ new Map();
     let curX = xOffset;
     for (let lv = 0; lv <= maxLevel; lv++) {
@@ -907,7 +908,7 @@ var BpmnAsCode = (() => {
             const count = lNodes.filter((n) => level.get(n.id) === lv).length;
             if (count > maxConcurrent) maxConcurrent = count;
           }
-          const neededH = Math.max(160, 35 + maxConcurrent * 80 + (maxConcurrent - 1) * 25 + 35);
+          const neededH = Math.max(170, 35 + maxConcurrent * 80 + (maxConcurrent - 1) * 35 + 35);
           laneHeights.set(l.id, neededH);
         }
         let curLaneY = poolStartY;
@@ -931,19 +932,27 @@ var BpmnAsCode = (() => {
               const rb = isRejectionTarget(b.id) ? 1 : 0;
               return ra - rb;
             });
-            const totalH = colNodes.reduce((sum, n) => sum + (SIZES[n.type]?.h ?? 80), 0) + 25 * (colNodes.length - 1);
+            const nodeSlotHeights = colNodes.map((n) => {
+              if (n.type === "start" || n.type === "end" || n.type === "catch" || n.type === "throw") return 76;
+              if (n.type === "gateway") return 80;
+              return SIZES[n.type]?.h ?? 80;
+            });
+            const totalH = nodeSlotHeights.reduce((sum, h) => sum + h, 0) + 32 * (colNodes.length - 1);
             let nodeY = curLaneY + Math.max(15, (lHeight - totalH) / 2);
-            for (const n of colNodes) {
+            for (let i = 0; i < colNodes.length; i++) {
+              const n = colNodes[i];
               const sz = SIZES[n.type] ?? { w: 100, h: 80 };
+              const slotH = nodeSlotHeights[i];
+              const actualY = Math.round(nodeY + (slotH - sz.h) / 2);
               layoutNodes.push({
                 ...n,
                 x: levelX.get(lv),
-                y: nodeY,
+                y: actualY,
                 width: sz.w,
                 height: sz.h,
                 level: lv
               });
-              nodeY += sz.h + 25;
+              nodeY += slotH + 32;
             }
           }
           curLaneY += lHeight;
@@ -1200,13 +1209,28 @@ var BpmnAsCode = (() => {
     const nameAttr = mf.label ? ` name="${escapeXml(mf.label)}"` : "";
     return `<messageFlow id="${mf.id}" sourceRef="${mf.source}" targetRef="${mf.target}"${nameAttr}/>`;
   }
-  function shapeXml(node) {
+  function shapeXml(node, flowsGoingSouth) {
     const bx = Math.round(node.x);
     const by = Math.round(node.y);
+    let labelXml = "  <bpmndi:BPMNLabel/>";
+    if (node.label && (node.type === "gateway" || node.type === "start" || node.type === "end" || node.type === "catch" || node.type === "throw")) {
+      const labelW = Math.max(70, Math.min(130, node.label.length * 8));
+      const charsPerLine = Math.max(8, Math.floor(labelW / 7.5));
+      const lines = Math.max(1, Math.ceil(node.label.length / charsPerLine));
+      const labelH = lines * 15 + 4;
+      const lx = Math.round(bx + (node.width - labelW) / 2);
+      let ly = Math.round(by + node.height + 6);
+      if (node.type === "gateway" && flowsGoingSouth) {
+        ly = Math.round(by - labelH - 6);
+      }
+      labelXml = `  <bpmndi:BPMNLabel>
+    <dc:Bounds x="${lx}" y="${ly}" width="${labelW}" height="${labelH}"/>
+  </bpmndi:BPMNLabel>`;
+    }
     return [
       `<bpmndi:BPMNShape id="${node.id}_di" bpmnElement="${node.id}">`,
       `  <dc:Bounds x="${bx}" y="${by}" width="${node.width}" height="${node.height}"/>`,
-      `  <bpmndi:BPMNLabel/>`,
+      labelXml,
       `</bpmndi:BPMNShape>`
     ].join("\n");
   }
@@ -1657,7 +1681,15 @@ ${msgFlows}
   </collaboration>
 `;
     }
-    const shapes = layoutNodes.map((n) => shapeXml(n)).join("\n");
+    const southNodes = /* @__PURE__ */ new Set();
+    for (const f of flows) {
+      const src = nodeMap.get(f.source);
+      const tgt = nodeMap.get(f.target);
+      if (src && tgt && tgt.y > src.y + src.height / 2 + 10) {
+        southNodes.add(src.id);
+      }
+    }
+    const shapes = layoutNodes.map((n) => shapeXml(n, southNodes.has(n.id))).join("\n");
     const edges = routeEdgesXml(flows, nodeMap, layoutNodes);
     const poolShapes = pools.length > 0 ? "\n" + result.pools.map((p) => poolShapeXml(p)).join("\n") : "";
     const laneShapes = result.lanes.length > 0 ? "\n" + result.lanes.map((l) => laneShapeXml(l)).join("\n") : "";

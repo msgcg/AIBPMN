@@ -3433,3 +3433,130 @@ input.app-dialog-input:focus {
   margin-top: 10px;
   justify-content: flex-end;
 }
+
+/* ── Traceability (Quote -> Canvas -> Code) ── */
+.trace-quote {
+  display: inline;
+  background: rgba(99, 102, 241, 0.14);
+  border-bottom: 1.5px dashed var(--accent-primary);
+  border-radius: 4px;
+  padding: 1px 5px;
+  cursor: pointer;
+  color: inherit;
+  transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.trace-quote:hover {
+  background: rgba(99, 102, 241, 0.28);
+  border-bottom-style: solid;
+  color: var(--text-primary);
+}
+
+.trace-quote.active {
+  background: rgba(245, 158, 11, 0.28) !important;
+  border-bottom: 2px solid #f59e0b !important;
+  color: #fff !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.55);
+  animation: tracePulse 1.8s infinite alternate ease-in-out;
+}
+
+@keyframes tracePulse {
+  0% {
+    background: rgba(245, 158, 11, 0.22);
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+  }
+  100% {
+    background: rgba(245, 158, 11, 0.42);
+    box-shadow: 0 0 18px rgba(245, 158, 11, 0.75);
+  }
+}
+
+/* ── Validation Report Card ── */
+.validation-report-card {
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(99, 102, 241, 0.05) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-md);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.validation-report-card .report-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: #10b981;
+  margin-bottom: 8px;
+}
+
+.validation-report-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: var(--text-primary);
+}
+
+.validation-report-card li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+/* ── Proactive Clarifying Questions Card ── */
+.proactive-questions-card {
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.09) 0%, rgba(217, 119, 6, 0.04) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.proactive-questions-card .questions-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: #f59e0b;
+  margin-bottom: 8px;
+}
+
+.proactive-questions-card ul {
+  margin: 0 0 10px 0;
+  padding-left: 20px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.proactive-questions-card .chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.proactive-chip {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.proactive-chip:hover {
+  background: rgba(245, 158, 11, 0.3);
+  border-color: #f59e0b;
+  color: #fff;
+  transform: translateY(-1px);
+}
