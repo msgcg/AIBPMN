@@ -833,11 +833,11 @@ def api_generate(request):
                     current_dsl=current_dsl,
                     instruction=prompt,
                     history=history,
-                    max_retries=2,
+                    max_retries=5,
                     user=None
                 )
             else:
-                result = GigaChatService.generate_diagram(prompt=prompt, history=history, max_retries=2, user=None)
+                result = GigaChatService.generate_diagram(prompt=prompt, history=history, max_retries=5, user=None)
 
             has_dsl = result.get('has_dsl', True)
             dsl_code = result.get('dsl_code', '')
@@ -942,11 +942,11 @@ def api_generate(request):
                 current_dsl=current_dsl,
                 instruction=prompt,
                 history=auth_history,
-                max_retries=2,
+                max_retries=5,
                 user=user
             )
         else:
-            result = GigaChatService.generate_diagram(prompt=prompt, history=auth_history, max_retries=2, user=user)
+            result = GigaChatService.generate_diagram(prompt=prompt, history=auth_history, max_retries=5, user=user)
 
         has_dsl = result.get('has_dsl', True)
         dsl_code = result.get('dsl_code', '')
@@ -1064,7 +1064,7 @@ def api_refine(request):
                 current_dsl=current_dsl or INITIAL_DEMO_DSL,
                 instruction=instruction,
                 history=data.get('history', []),
-                max_retries=2,
+                max_retries=5,
                 user=None
             )
             has_dsl = result.get('has_dsl', True)
@@ -1140,7 +1140,7 @@ def api_refine(request):
             current_dsl=current_dsl,
             instruction=instruction,
             history=history,
-            max_retries=2,
+            max_retries=5,
             user=user
         )
 

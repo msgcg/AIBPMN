@@ -240,6 +240,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const lineNumbers = document.getElementById('code-line-numbers');
   const codeHighlightPre = document.getElementById('code-highlight-pre');
   const codeHighlightCode = document.getElementById('code-highlight-code');
+  const codeActiveLineBar = document.getElementById('code-active-line-bar');
+  let activeHighlightedLine = 0;
 
   const importDslBtn = document.getElementById('import-dsl-btn');
   const importDslInput = document.getElementById('import-dsl-input');
@@ -862,7 +864,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateLineNumbers() {
     if (!codeEditor || !lineNumbers) return;
     const lines = codeEditor.value.split('\n').length;
-    lineNumbers.innerHTML = Array.from({ length: lines }, (_, i) => i + 1).join('<br/>');
+    lineNumbers.innerHTML = Array.from({ length: lines }, (_, i) => {
+      const lineNum = i + 1;
+      const isActive = lineNum === activeHighlightedLine ? ' active' : '';
+      return `<span class="line-num${isActive}" data-line="${lineNum}">${lineNum}</span>`;
+    }).join('');
     const linesBadge = document.getElementById('dsl-lines-count');
     if (linesBadge) linesBadge.textContent = `${lines} стр.`;
   }
@@ -922,6 +928,7 @@ document.addEventListener('DOMContentLoaded', () => {
         codeHighlightPre.scrollTop = codeEditor.scrollTop;
         codeHighlightPre.scrollLeft = codeEditor.scrollLeft;
       }
+      updateActiveLineBarPosition();
     });
 
     codeEditor.addEventListener('keydown', (e) => {
@@ -1280,7 +1287,10 @@ document.addEventListener('DOMContentLoaded', () => {
             updateLineNumbers();
             updateDslHighlight();
             lastSourceOfChange = 'ai';
-            compileCode();
+            const compileRes = compileCode();
+            if (compileRes && !compileRes.valid) {
+              await requestCorrection(compileRes.error, res.dsl_code, 1);
+            }
           }
         }
       } catch (err) {
@@ -1541,10 +1551,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function updateActiveLineBarPosition() {
+    if (!codeActiveLineBar) return;
+    if (activeHighlightedLine < 1) {
+      codeActiveLineBar.style.display = 'none';
+      return;
+    }
+    const lineHeight = 22;
+    const paddingTop = 12;
+    const scroll = codeEditor ? codeEditor.scrollTop : 0;
+    const top = paddingTop + (activeHighlightedLine - 1) * lineHeight - scroll;
+    codeActiveLineBar.style.transform = `translateY(${top}px)`;
+    codeActiveLineBar.style.display = 'block';
+  }
+
   function findDslLineForElement(elementId) {
-    if (!codeEditor || !codeEditor.value || !elementId) return -1;
+    if (!elementId) return -1;
+    if (Array.isArray(currentTraceability) && currentTraceability.length > 0) {
+      const match = currentTraceability.find(t => t.id === elementId);
+      if (match && match.line > 0) {
+        return match.line;
+      }
+    }
+    if (!codeEditor || !codeEditor.value) return -1;
     const lines = codeEditor.value.split('\n');
-    const targetPattern = new RegExp(`^(?:start|end|catch|throw|boundary|task|gateway|gate|subprocess|call):\\s*${elementId}\\b`);
+    const targetPattern = new RegExp(`^(?:start|end|catch|throw|boundary|task|gateway|gate|subprocess|call|pool|lane|event):\\s*${elementId}\\b`);
     for (let i = 0; i < lines.length; i++) {
       const clean = lines[i].split('#')[0].trim();
       if (targetPattern.test(clean)) {
@@ -1552,7 +1583,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].includes(elementId)) {
+      const clean = lines[i].split('#')[0].trim();
+      if (clean.includes(elementId)) {
         return i + 1;
       }
     }
@@ -1560,9 +1592,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function highlightLineInEditor(lineNumber) {
-    if (!codeEditor || lineNumber < 1) return;
+    if (!codeEditor || lineNumber < 1) {
+      activeHighlightedLine = 0;
+      updateActiveLineBarPosition();
+      if (lineNumbers) {
+        lineNumbers.querySelectorAll('.line-num.active').forEach(el => el.classList.remove('active'));
+      }
+      return;
+    }
     const lines = codeEditor.value.split('\n');
     if (lineNumber > lines.length) return;
+
+    activeHighlightedLine = lineNumber;
 
     let charStart = 0;
     for (let i = 0; i < lineNumber - 1; i++) {
@@ -1570,11 +1611,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const charEnd = charStart + lines[lineNumber - 1].length;
 
-    const lineHeight = 21;
+    const lineHeight = 22;
     const targetScrollTop = (lineNumber - 1) * lineHeight - codeEditor.clientHeight / 2 + lineHeight;
     codeEditor.scrollTop = Math.max(0, targetScrollTop);
 
     codeEditor.setSelectionRange(charStart, charEnd);
+
+    // Update active line bar position
+    updateActiveLineBarPosition();
+
+    // Update line numbers gutter highlight
+    if (lineNumbers) {
+      lineNumbers.querySelectorAll('.line-num.active').forEach(el => el.classList.remove('active'));
+      const numEl = lineNumbers.querySelector(`.line-num[data-line="${lineNumber}"]`);
+      if (numEl) {
+        numEl.classList.add('active');
+      }
+    }
   }
 
   function highlightTraceInChat(elementId) {

@@ -161,10 +161,10 @@ class GigaChatService:
         return None, text.strip()
 
     @classmethod
-    def generate_diagram(cls, prompt: str, history: list = None, max_retries: int = 2, user=None) -> dict:
+    def generate_diagram(cls, prompt: str, history: list = None, max_retries: int = 5, user=None) -> dict:
         """
         Generates BPMN-as-Code DSL and architectural explanation.
-        Includes automatic retry and self-correction loop if DSL fails compilation (up to 2 attempts).
+        Includes automatic retry and self-correction loop if DSL fails compilation (up to 5 attempts).
         If the user asked a question, returns a consultative text response without forcing a code block.
         """
         system_prompt = compose_system_prompt(user=user)
@@ -268,13 +268,17 @@ class GigaChatService:
                 tip = f"\nВАЖНО: Идентификатор{missing_id} указан в стрелках связей (->), но нигде не объявлен! Объяви его строкой выше (например: `task:{missing_id or ' id'} \"Название\"`) или исправь опечатку."
             elif "Duplicate node id" in str(last_error):
                 tip = "\nВАЖНО: Идентификаторы всех узлов должны быть строго уникальными! Не объявляйте один и тот же ID дважды."
+            elif "Expected KEYWORD \"process\"" in str(last_error) or ("process" in str(last_error).lower() and "keyword" in str(last_error).lower()):
+                tip = "\nВАЖНО: Первая строка кода ОБЯЗАНА быть: process \"Название процесса\""
+            elif "Expected STRING" in str(last_error) or "Unterminated string" in str(last_error):
+                tip = "\nВАЖНО: Все названия узлов и дорожек должны быть в двойных кавычках: \"Название\". Одинарные кавычки не допускаются."
 
             messages = messages[:base_len]
             messages.append({"role": "assistant", "content": raw_response})
             messages.append({
                 "role": "user",
                 "content": (
-                    f"При компиляции возникла ошибка (строка {line}, позиция {col}):\n"
+                    f"При компиляции возникла ошибка (попытка {attempt} из {max_retries}, строка {line}, позиция {col}):\n"
                     f"{last_error}{tip}\n\n"
                     f"Пожалуйста, исправь синтаксис DSL кода процесса, чтобы он строго соответствовал грамматике "
                     f"и успешно скомпилировался без ошибок. Выведи исправленный полный код в блоке ```bac."
@@ -295,10 +299,10 @@ class GigaChatService:
         }
 
     @classmethod
-    def refine_diagram(cls, current_dsl: str, instruction: str, history: list = None, max_retries: int = 2, user=None) -> dict:
+    def refine_diagram(cls, current_dsl: str, instruction: str, history: list = None, max_retries: int = 5, user=None) -> dict:
         """
         Modifies and refines an existing BPMN diagram DSL based on user's iterative instructions.
-        Includes automatic retry loop (up to 2 attempts).
+        Includes automatic retry loop (up to 5 attempts).
         """
         system_prompt = compose_system_prompt(user=user)
         messages = [{"role": "system", "content": system_prompt}]
@@ -405,13 +409,17 @@ class GigaChatService:
                 tip = f"\nВАЖНО: Идентификатор{missing_id} указан в стрелках связей (->), но нигде не объявлен! Объяви его строкой выше (например: `task:{missing_id or ' id'} \"Название\"`) или исправь опечатку."
             elif "Duplicate node id" in str(last_error):
                 tip = "\nВАЖНО: Идентификаторы всех узлов должны быть строго уникальными! Не объявляйте один и тот же ID дважды."
+            elif "Expected KEYWORD \"process\"" in str(last_error) or ("process" in str(last_error).lower() and "keyword" in str(last_error).lower()):
+                tip = "\nВАЖНО: Первая строка кода ОБЯЗАНА быть: process \"Название процесса\""
+            elif "Expected STRING" in str(last_error) or "Unterminated string" in str(last_error):
+                tip = "\nВАЖНО: Все названия узлов и дорожек должны быть в двойных кавычках: \"Название\". Одинарные кавычки не допускаются."
 
             messages = messages[:base_len]
             messages.append({"role": "assistant", "content": raw_response})
             messages.append({
                 "role": "user",
                 "content": (
-                    f"При компиляции обновленного кода возникла ошибка (строка {line}, позиция {col}):\n"
+                    f"При компиляции обновленного кода возникла ошибка (попытка {attempt} из {max_retries}, строка {line}, позиция {col}):\n"
                     f"{last_error}{tip}\n\n"
                     f"Исправь ошибку синтаксиса DSL и верни полный валидный код диаграммы в блоке ```bac."
                 )

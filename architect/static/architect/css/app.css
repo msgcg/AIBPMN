@@ -1882,12 +1882,39 @@ body.code-fullscreen-active #tab-dsl.fullscreen #code-editor-wrap {
   word-wrap: normal !important;
 }
 
+.code-active-line-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 22px;
+  background: rgba(245, 158, 11, 0.22);
+  border-left: 3.5px solid #f59e0b;
+  box-shadow: inset 0 0 10px rgba(245, 158, 11, 0.18), 0 0 14px rgba(245, 158, 11, 0.28);
+  pointer-events: none;
+  z-index: 1;
+  display: none;
+  transition: opacity 0.2s ease;
+  animation: codeLinePulse 1.8s infinite alternate ease-in-out;
+}
+
+@keyframes codeLinePulse {
+  0% {
+    background: rgba(245, 158, 11, 0.18);
+    box-shadow: inset 0 0 8px rgba(245, 158, 11, 0.14), 0 0 8px rgba(245, 158, 11, 0.2);
+  }
+  100% {
+    background: rgba(245, 158, 11, 0.34);
+    box-shadow: inset 0 0 16px rgba(245, 158, 11, 0.35), 0 0 18px rgba(245, 158, 11, 0.45);
+  }
+}
+
 #code-highlight-pre {
   background: transparent !important;
   pointer-events: none !important;
   overflow: hidden !important;
   color: var(--text-primary) !important;
-  z-index: 1;
+  z-index: 2;
 }
 
 #code-highlight-code,
@@ -1911,9 +1938,14 @@ body.code-fullscreen-active #tab-dsl.fullscreen #code-editor-wrap {
   caret-color: var(--accent-primary) !important;
   resize: none !important;
   overflow: auto !important;
-  z-index: 2;
+  z-index: 3;
   scrollbar-width: thin;
   scrollbar-color: var(--border-color) var(--bg-surface);
+}
+
+#code-editor::selection {
+  background: rgba(245, 158, 11, 0.4) !important;
+  color: #fff !important;
 }
 
 #code-editor::-webkit-scrollbar {
@@ -1948,6 +1980,23 @@ body.code-fullscreen-active #tab-dsl.fullscreen #code-editor-wrap {
   user-select: none;
   overflow: hidden;
   border-right: 1px solid var(--border-color);
+}
+
+#code-line-numbers .line-num {
+  display: block;
+  height: 22px;
+  line-height: 22px;
+  padding: 0 4px;
+  text-align: right;
+  transition: all 0.15s ease;
+}
+
+#code-line-numbers .line-num.active {
+  color: #f59e0b !important;
+  font-weight: 700 !important;
+  background: rgba(245, 158, 11, 0.24);
+  border-radius: 3px;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
 }
 
 /* ══════════════════════════════════════════════════════════
