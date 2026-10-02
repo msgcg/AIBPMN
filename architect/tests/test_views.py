@@ -394,6 +394,103 @@ class ArchitectViewsTests(TestCase):
             self.assertIn('📎 **Прикрепленный документ: `extra.md`**', called_instruction)
             self.assertIn('# Extra Requirements', called_instruction)
 
+    def test_api_refine_with_attached_docx_file(self):
+        import io
+        import docx
+        from unittest.mock import patch
+
+        doc = docx.Document()
+        doc.add_paragraph("Менеджер принимает заявку от клиента.")
+        doc.add_paragraph("Бухгалтер оплачивает счет.")
+        docx_bytes = io.BytesIO()
+        doc.save(docx_bytes)
+        docx_bytes.seek(0)
+
+        uploaded_file = SimpleUploadedFile(
+            "rules.docx",
+            docx_bytes.read(),
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+        with patch('architect.services.gigachat_client.GigaChatService.refine_diagram') as mock_refine:
+            mock_refine.return_value = {
+                'success': True,
+                'has_dsl': True,
+                'dsl_code': 'process "DocxProcess"\nstart: s "Начало"\nend: e "Конец"\ns -> e',
+                'explanation': 'Построен по docx',
+                'bpmn_xml': '<xml></xml>',
+                'attempts': 1
+            }
+            resp = self.client.post('/api/refine/', {
+                'diagram_id': self.diagram.id,
+                'instruction': 'Используй регламент',
+                'attached_file': uploaded_file
+            })
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertTrue(data['success'])
+
+            mock_refine.assert_called_once()
+            called_instruction = mock_refine.call_args[1]['instruction']
+            self.assertIn('Менеджер принимает заявку', called_instruction)
+            self.assertIn('Бухгалтер оплачивает счет', called_instruction)
+
+    def test_api_refine_with_attached_pdf_file(self):
+        import io
+        import pypdf
+        from unittest.mock import patch
+
+        # Create a simple PDF using pypdf writer (with page)
+        pdf_writer = pypdf.PdfWriter()
+        pdf_writer.add_blank_page(width=200, height=200)
+        pdf_bytes = io.BytesIO()
+        pdf_writer.write(pdf_bytes)
+        pdf_bytes.seek(0)
+
+        # We can mock extract_text_from_pdf or provide actual text
+        uploaded_file = SimpleUploadedFile("procedure.pdf", pdf_bytes.read(), content_type="application/pdf")
+
+        with patch('architect.views.extract_text_from_pdf', return_value="1. Заявка создается сотрудником.\n2. Руководитель утверждает заявку."), \
+             patch('architect.services.gigachat_client.GigaChatService.refine_diagram') as mock_refine:
+            mock_refine.return_value = {
+                'success': True,
+                'has_dsl': True,
+                'dsl_code': 'process "PdfProcess"\nstart: s "Начало"\nend: e "Конец"\ns -> e',
+                'explanation': 'Построен по pdf',
+                'bpmn_xml': '<xml></xml>',
+                'attempts': 1
+            }
+            resp = self.client.post('/api/refine/', {
+                'diagram_id': self.diagram.id,
+                'instruction': 'Используй регламент из pdf',
+                'attached_file': uploaded_file
+            })
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertTrue(data['success'])
+
+            mock_refine.assert_called_once()
+            called_instruction = mock_refine.call_args[1]['instruction']
+            self.assertIn('Заявка создается сотрудником', called_instruction)
+            self.assertIn('Руководитель утверждает заявку', called_instruction)
+
+    def test_api_diagram_detail_sync_xml_to_dsl(self):
+        from architect.services.compiler_service import compile_dsl
+        dsl = 'process "XmlSync"\nstart: s "Старт"\ntask: t "Действие" user\nend: e "Финиш"\ns -> t -> e'
+        c_res = compile_dsl(dsl)
+        self.assertTrue(c_res.get('valid'))
+        xml = c_res['xml']
+
+        resp = self.client.post(f'/api/diagrams/{self.diagram.id}/', data=json.dumps({
+            'bpmn_xml': xml
+        }), content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        self.diagram.refresh_from_db()
+        self.assertIn('process "XmlSync"', self.diagram.dsl_code)
+        self.assertIn('task: t "Действие" user', self.diagram.dsl_code)
+
+
+
 
 
 

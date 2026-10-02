@@ -596,6 +596,30 @@ var BpmnAsCode = (() => {
         }
       }
     }
+    if (lanes.length > 0 && pools.length === 0) {
+      pools.push({ id: "p_main", name: processName || "\u041E\u0441\u043D\u043E\u0432\u043D\u043E\u0439 \u043F\u0440\u043E\u0446\u0435\u0441\u0441" });
+      lanes.forEach((l) => {
+        if (!l.pool) l.pool = "p_main";
+      });
+    }
+    if (lanes.length === 0 && pools.length === 0) {
+      const performers = [];
+      nodes.forEach((n) => {
+        if (n.performer && !performers.includes(n.performer)) {
+          performers.push(n.performer);
+        }
+      });
+      if (performers.length > 0) {
+        pools.push({ id: "p_main", name: processName || "\u041E\u0441\u043D\u043E\u0432\u043D\u043E\u0439 \u043F\u0440\u043E\u0446\u0435\u0441\u0441" });
+        performers.forEach((perf, idx) => {
+          const lid = "lane_" + (idx + 1);
+          lanes.push({ id: lid, name: perf, pool: "p_main" });
+          nodes.forEach((n) => {
+            if (n.performer === perf) n.laneId = lid;
+          });
+        });
+      }
+    }
     const process = { name: processName, nodes, flows, pools, lanes, messageFlows };
     const semanticErrors = validate(process);
     if (semanticErrors.length > 0) {
@@ -792,38 +816,190 @@ var BpmnAsCode = (() => {
       bary.sort((a, b) => a.val - b.val || a.originalIdx - b.originalIdx);
       byLevel.set(lv, bary.map((b) => b.id));
     }
+    const hasLanes = lanes.length > 0;
+    if (hasLanes) {
+      const laneIds = new Set(lanes.map((l) => l.id));
+      for (const n of flowNodes) {
+        if (!n.laneId && n.performer) {
+          const matched = lanes.find((l) => l.name.toLowerCase() === n.performer.toLowerCase() || l.id === n.performer);
+          if (matched) n.laneId = matched.id;
+        }
+      }
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const n of flowNodes) {
+          if (!n.laneId || !laneIds.has(n.laneId)) {
+            for (const pred of fwdIn.get(n.id) || []) {
+              const pNode = nodeMap.get(pred);
+              if (pNode && pNode.laneId && laneIds.has(pNode.laneId)) {
+                n.laneId = pNode.laneId;
+                changed = true;
+                break;
+              }
+            }
+            if (!n.laneId || !laneIds.has(n.laneId)) {
+              for (const succ of fwdOut.get(n.id) || []) {
+                const sNode = nodeMap.get(succ);
+                if (sNode && sNode.laneId && laneIds.has(sNode.laneId)) {
+                  n.laneId = sNode.laneId;
+                  changed = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+      for (const n of flowNodes) {
+        if (!n.laneId || !laneIds.has(n.laneId)) {
+          n.laneId = lanes[0].id;
+        }
+      }
+    }
     const levelMaxWidth = /* @__PURE__ */ new Map();
-    for (const [lv, ids] of byLevel) {
-      const maxW = Math.max(...ids.map((id) => SIZES[nodeMap.get(id).type]?.w ?? 100));
+    for (let lv = 0; lv <= maxLevel; lv++) {
+      const ids = flowNodes.filter((n) => level.get(n.id) === lv).map((n) => n.id);
+      const maxW = ids.length > 0 ? Math.max(...ids.map((id) => SIZES[nodeMap.get(id).type]?.w ?? 100)) : 100;
       levelMaxWidth.set(lv, maxW);
     }
     const hasPools = pools.length > 0;
-    const xOffset = hasPools ? PADDING + POOL_HEADER : PADDING;
+    const xOffset = hasPools || hasLanes ? PADDING + POOL_HEADER + 20 : PADDING;
     const levelX = /* @__PURE__ */ new Map();
     let curX = xOffset;
     for (let lv = 0; lv <= maxLevel; lv++) {
       levelX.set(lv, curX);
       curX += (levelMaxWidth.get(lv) ?? 100) + H_GAP;
     }
-    let maxColH = 0;
-    for (const [, ids] of byLevel) {
-      const sizes = ids.map((id) => SIZES[nodeMap.get(id).type] ?? { w: 100, h: 80 });
-      const totalH = sizes.reduce((sum, s) => sum + s.h, 0) + V_GAP * (ids.length - 1);
-      maxColH = Math.max(maxColH, totalH);
-    }
-    const centerBaseline = Math.max(300, maxColH);
     const layoutNodes = [];
-    for (const [lv, ids] of byLevel) {
-      const x = levelX.get(lv);
-      const sizes = ids.map((id) => SIZES[nodeMap.get(id).type] ?? { w: 100, h: 80 });
-      const totalH = sizes.reduce((sum, s) => sum + s.h, 0) + V_GAP * (ids.length - 1);
-      let curY = PADDING + Math.max(0, (centerBaseline - totalH) / 2);
-      for (let i = 0; i < ids.length; i++) {
-        const id = ids[i];
-        const node = nodeMap.get(id);
-        const { w, h } = sizes[i];
-        layoutNodes.push({ ...node, x, y: curY, width: w, height: h, level: lv });
-        curY += h + V_GAP;
+    const layoutPools = [];
+    const layoutLanes = [];
+    if (hasLanes) {
+      const externalPools = pools.filter((p) => !lanes.some((l) => l.pool === p.id));
+      let mainPools = pools.filter((p) => lanes.some((l) => l.pool === p.id));
+      if (mainPools.length === 0) {
+        const defaultPool = { id: "p_main", name: process.name || "\u041E\u0441\u043D\u043E\u0432\u043D\u043E\u0439 \u043F\u0440\u043E\u0446\u0435\u0441\u0441" };
+        mainPools = [defaultPool];
+        lanes.forEach((l) => {
+          if (!l.pool) l.pool = defaultPool.id;
+        });
+      }
+      let curY = PADDING;
+      for (const ep of externalPools) {
+        layoutPools.push({
+          id: ep.id,
+          name: ep.name,
+          x: PADDING,
+          y: curY,
+          width: 800,
+          height: 60
+        });
+        curY += 60 + 35;
+      }
+      for (const mp of mainPools) {
+        const pLanes = lanes.filter((l) => l.pool === mp.id);
+        const poolStartY = curY;
+        const laneHeights = /* @__PURE__ */ new Map();
+        for (const l of pLanes) {
+          const lNodes = flowNodes.filter((n) => n.laneId === l.id);
+          let maxConcurrent = 1;
+          for (let lv = 0; lv <= maxLevel; lv++) {
+            const count = lNodes.filter((n) => level.get(n.id) === lv).length;
+            if (count > maxConcurrent) maxConcurrent = count;
+          }
+          const neededH = Math.max(160, 35 + maxConcurrent * 80 + (maxConcurrent - 1) * 25 + 35);
+          laneHeights.set(l.id, neededH);
+        }
+        let curLaneY = poolStartY;
+        for (const l of pLanes) {
+          const lHeight = laneHeights.get(l.id);
+          layoutLanes.push({
+            id: l.id,
+            name: l.name,
+            pool: mp.id,
+            x: PADDING + POOL_HEADER,
+            y: curLaneY,
+            width: 800,
+            height: lHeight
+          });
+          const lNodes = flowNodes.filter((n) => n.laneId === l.id);
+          for (let lv = 0; lv <= maxLevel; lv++) {
+            const colNodes = lNodes.filter((n) => level.get(n.id) === lv);
+            if (colNodes.length === 0) continue;
+            colNodes.sort((a, b) => {
+              const ra = isRejectionTarget(a.id) ? 1 : 0;
+              const rb = isRejectionTarget(b.id) ? 1 : 0;
+              return ra - rb;
+            });
+            const totalH = colNodes.reduce((sum, n) => sum + (SIZES[n.type]?.h ?? 80), 0) + 25 * (colNodes.length - 1);
+            let nodeY = curLaneY + Math.max(15, (lHeight - totalH) / 2);
+            for (const n of colNodes) {
+              const sz = SIZES[n.type] ?? { w: 100, h: 80 };
+              layoutNodes.push({
+                ...n,
+                x: levelX.get(lv),
+                y: nodeY,
+                width: sz.w,
+                height: sz.h,
+                level: lv
+              });
+              nodeY += sz.h + 25;
+            }
+          }
+          curLaneY += lHeight;
+        }
+        const poolTotalH = curLaneY - poolStartY;
+        layoutPools.push({
+          id: mp.id,
+          name: mp.name,
+          x: PADDING,
+          y: poolStartY,
+          width: 800,
+          height: poolTotalH
+        });
+        curY = curLaneY + 35;
+      }
+    } else {
+      let maxColH = 0;
+      for (const [, ids] of byLevel) {
+        const sizes = ids.map((id) => SIZES[nodeMap.get(id).type] ?? { w: 100, h: 80 });
+        const totalH = sizes.reduce((sum, s) => sum + s.h, 0) + V_GAP * (ids.length - 1);
+        maxColH = Math.max(maxColH, totalH);
+      }
+      const centerBaseline = Math.max(300, maxColH);
+      for (const [lv, ids] of byLevel) {
+        const x = levelX.get(lv);
+        const sizes = ids.map((id) => SIZES[nodeMap.get(id).type] ?? { w: 100, h: 80 });
+        const totalH = sizes.reduce((sum, s) => sum + s.h, 0) + V_GAP * (ids.length - 1);
+        let curY = PADDING + Math.max(0, (centerBaseline - totalH) / 2);
+        for (let i = 0; i < ids.length; i++) {
+          const id = ids[i];
+          const node = nodeMap.get(id);
+          const { w, h } = sizes[i];
+          layoutNodes.push({ ...node, x, y: curY, width: w, height: h, level: lv });
+          curY += h + V_GAP;
+        }
+      }
+      if (hasPools) {
+        let minX = Infinity, maxX2 = 0, minY = Infinity, maxY2 = 0;
+        for (const n of layoutNodes) {
+          minX = Math.min(minX, n.x);
+          maxX2 = Math.max(maxX2, n.x + n.width);
+          minY = Math.min(minY, n.y);
+          maxY2 = Math.max(maxY2, n.y + n.height);
+        }
+        const diagramWidth = Math.max(maxX2 - PADDING + PADDING + POOL_HEADER, 600);
+        const diagramHeight = Math.max(maxY2 + PADDING - PADDING, 300);
+        for (const pool of pools) {
+          layoutPools.push({
+            id: pool.id,
+            name: pool.name,
+            x: PADDING,
+            y: PADDING - 20,
+            width: diagramWidth,
+            height: diagramHeight + 40
+          });
+        }
       }
     }
     const layoutNodeMap = new Map(layoutNodes.map((n) => [n.id, n]));
@@ -871,40 +1047,14 @@ var BpmnAsCode = (() => {
         dataX += w + H_GAP;
       }
     }
-    const layoutPools = [];
-    const layoutLanes = [];
-    if (hasPools) {
-      let minX = Infinity, maxX2 = 0, minY = Infinity, maxY2 = 0;
+    if (layoutPools.length > 0) {
+      let maxX = 0;
       for (const n of layoutNodes) {
-        minX = Math.min(minX, n.x);
-        maxX2 = Math.max(maxX2, n.x + n.width);
-        minY = Math.min(minY, n.y);
-        maxY2 = Math.max(maxY2, n.y + n.height);
+        maxX = Math.max(maxX, n.x + n.width);
       }
-      const diagramWidth = Math.max(maxX2 - PADDING + PADDING + POOL_HEADER, 600);
-      const diagramHeight = Math.max(maxY2 + PADDING - PADDING, 300);
-      for (const pool of pools) {
-        const poolLanes = lanes.filter((l) => l.pool === pool.id);
-        const poolX = PADDING;
-        const poolY = PADDING - 20;
-        const poolW = diagramWidth;
-        const poolH = diagramHeight + 40;
-        layoutPools.push({ id: pool.id, name: pool.name, x: poolX, y: poolY, width: poolW, height: poolH });
-        if (poolLanes.length > 0) {
-          const laneH = poolH / poolLanes.length;
-          for (let i = 0; i < poolLanes.length; i++) {
-            layoutLanes.push({
-              id: poolLanes[i].id,
-              name: poolLanes[i].name,
-              pool: pool.id,
-              x: poolX,
-              y: poolY + laneH * i,
-              width: poolW,
-              height: laneH
-            });
-          }
-        }
-      }
+      const diagramWidth = Math.max(maxX + PADDING + 30, 750);
+      for (const p of layoutPools) p.width = diagramWidth;
+      for (const l of layoutLanes) l.width = diagramWidth - POOL_HEADER;
     }
     return { nodes: layoutNodes, flows, pools: layoutPools, lanes: layoutLanes, messageFlows };
   }
@@ -1486,9 +1636,12 @@ ${laneEntries}
     ].filter((s) => s.length > 0).map((s) => indent(s, 2)).join("\n");
     let collaborationXml = "";
     if (hasPools) {
-      const participants = pools.map(
-        (p) => `    <participant id="${escapeXml(p.id)}" name="${escapeXml(p.name)}" processRef="${processId}"/>`
-      ).join("\n");
+      const participants = pools.map((p) => {
+        const hasContent = lanes.some((l) => l.pool === p.id) || layoutNodes.some((n) => n.laneId && lanes.some((l) => l.id === n.laneId && l.pool === p.id));
+        const isMain = hasContent || pools.length === 1;
+        const procRef = isMain ? ` processRef="${processId}"` : "";
+        return `    <participant id="${escapeXml(p.id)}" name="${escapeXml(p.name)}"${procRef}/>`;
+      }).join("\n");
       const msgFlows = messageFlows.length > 0 ? "\n" + messageFlows.map((mf) => "    " + messageFlowXml(mf)).join("\n") : "";
       collaborationXml = `
   <collaboration id="Collaboration_1">

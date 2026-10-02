@@ -10,7 +10,7 @@ from django.shortcuts import render, get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from .models import Project, Diagram, ChatMessage, KnowledgeBaseFile
 from .services.gigachat_client import GigaChatService
-from .services.compiler_service import compile_dsl
+from .services.compiler_service import compile_dsl, decompile_bpmn_xml
 from .services.knowledge_base import (
     list_kb_files,
     read_kb_file,
@@ -23,38 +23,32 @@ from .services.knowledge_base import (
 
 INITIAL_DEMO_DSL = """process "Согласование командировки"
 
-start: request_submitted "Заявка на командировку подана"
-end: trip_approved "Командировка согласована"
-end: trip_rejected "Заявка отклонена"
+pool: p_corp "Организация"
+lane: l_employee "Сотрудник" in p_corp
+lane: l_manager "Руководитель отдела" in p_corp
+lane: l_fin "Бухгалтерия и финансы" in p_corp
 
-task: check_budget "Проверить лимит бюджета" service
-gateway: budget_ok "В рамках бюджета?" exclusive
+start: s_req "Подать заявку на командировку" in l_employee
+task: t_check "Проверить лимит бюджета" service in l_manager
+gateway: g_budget "В рамках бюджета?" exclusive in l_manager
 
-task: manager_review "Согласование руководителем" user by "Руководитель отдела"
-gateway: manager_decision "Решение руководителя" exclusive
+task: t_review "Согласование руководителем" user in l_manager
+gateway: g_manager "Решение руководителя" exclusive in l_manager
+task: t_rework "Доработать параметры поездки" user in l_employee
 
-task: fin_director_review "Согласование финдиректором" user by "Финансовый директор"
-gateway: fin_decision "Решение финдиректора" exclusive
+task: t_booking "Бронирование билетов и выплата суточных" service in l_fin
 
-gateway: fork_booking "Оформление поездки" parallel
-task: book_tickets "Бронирование билетов" service
-task: payout_advance "Выплата суточных" service
-gateway: join_booking "Поездка оформлена" parallel
+end: e_approved "Командировка согласована" in l_fin
+end: e_rejected "Заявка отклонена" in l_manager
 
-request_submitted -> check_budget -> budget_ok
-budget_ok --[Да]--> manager_review -> manager_decision
-budget_ok --[Нет]--> trip_rejected
+s_req -> t_check -> g_budget
+g_budget --[В лимите]--> t_review -> g_manager
+g_budget --[Превышен]--> e_rejected
 
-manager_decision --[Одобрено]--> fin_director_review -> fin_decision
-manager_decision --[Отклонено]--> trip_rejected
-
-fin_decision --[Одобрено]--> fork_booking
-fin_decision --[Отклонено]--> trip_rejected
-
-fork_booking -> book_tickets -> join_booking
-fork_booking -> payout_advance -> join_booking
-
-join_booking -> trip_approved"""
+g_manager --[Одобрено]--> t_booking -> e_approved
+g_manager --[На доработку]--> t_rework
+t_rework -> t_review
+g_manager --[Отклонено]--> e_rejected"""
 
 
 def validate_username_and_password(username, password, password_confirm=None, is_registration=True):
@@ -508,12 +502,17 @@ def api_diagram_detail(request, diagram_id):
                 diagram.name = data['name'].strip()
             if 'description' in data:
                 diagram.description = data['description'].strip()
-            if 'dsl_code' in data:
+            if 'dsl_code' in data and data['dsl_code'].strip():
                 diagram.dsl_code = data['dsl_code']
                 compile_res = compile_dsl(diagram.dsl_code)
                 if compile_res.get('valid') and compile_res.get('xml'):
                     diagram.bpmn_xml = compile_res['xml']
-            if 'bpmn_xml' in data:
+            elif 'bpmn_xml' in data and data['bpmn_xml'].strip():
+                diagram.bpmn_xml = data['bpmn_xml']
+                decompiled_dsl = decompile_bpmn_xml(diagram.bpmn_xml)
+                if decompiled_dsl and not decompiled_dsl.startswith('# Ошибка'):
+                    diagram.dsl_code = decompiled_dsl
+            if 'bpmn_xml' in data and data['bpmn_xml'].strip():
                 diagram.bpmn_xml = data['bpmn_xml']
             if 'svg_preview' in data:
                 diagram.svg_preview = data['svg_preview']
@@ -588,32 +587,110 @@ def api_messages(request, diagram_id):
 
 # ─── Generation & Refinement API ──────────────────────────────────────────
 
-MAX_MD_FILE_SIZE = 2 * 1024 * 1024  # 2 МБ лимит для Markdown документов
-ALLOWED_MD_EXTENSIONS = ('.md', '.markdown')
+MAX_UPLOAD_DOC_SIZE = 10 * 1024 * 1024  # 10 МБ лимит для документов
+MAX_MD_FILE_SIZE = MAX_UPLOAD_DOC_SIZE
+ALLOWED_DOC_EXTENSIONS = ('.md', '.markdown', '.txt', '.docx', '.pdf')
+ALLOWED_MD_EXTENSIONS = ALLOWED_DOC_EXTENSIONS
+
+
+def extract_text_from_docx(raw_bytes: bytes, file_name: str) -> str:
+    """Извлекает текст из DOCX документа, включая параграфы и таблицы."""
+    import io
+    # 1. Try python-docx
+    try:
+        import docx
+        doc = docx.Document(io.BytesIO(raw_bytes))
+        parts = []
+        for p in doc.paragraphs:
+            t = p.text.strip()
+            if t:
+                parts.append(t)
+        for tbl in doc.tables:
+            for row in tbl.rows:
+                row_text = ' | '.join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                if row_text:
+                    parts.append(row_text)
+        text = '\n'.join(parts).strip()
+        if text:
+            return text
+    except Exception:
+        pass
+
+    # 2. Fallback using built-in zipfile and xml parsing
+    try:
+        import zipfile
+        import xml.etree.ElementTree as ET
+        with zipfile.ZipFile(io.BytesIO(raw_bytes)) as z:
+            xml_content = z.read('word/document.xml')
+            tree = ET.fromstring(xml_content)
+            ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+            paragraphs = []
+            for p in tree.iterfind('.//w:p', ns):
+                texts = [node.text for node in p.iterfind('.//w:t', ns) if node.text]
+                if texts:
+                    paragraphs.append(''.join(texts))
+            text = '\n'.join(paragraphs).strip()
+            if text:
+                return text
+    except Exception as exc:
+        raise ValueError(f"Не удалось извлечь текст из DOCX «{file_name}»: {exc}")
+
+    raise ValueError(f"Документ DOCX «{file_name}» не содержит текстовых данных.")
+
+
+def extract_text_from_pdf(raw_bytes: bytes, file_name: str) -> str:
+    """Извлекает текстовый слой из PDF файла."""
+    import io
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(raw_bytes))
+        if len(reader.pages) == 0:
+            raise ValueError(f"PDF документ «{file_name}» не содержит страниц.")
+        parts = []
+        for idx, page in enumerate(reader.pages):
+            txt = page.extract_text() or ''
+            txt = txt.strip()
+            if txt:
+                parts.append(txt)
+        text = '\n\n'.join(parts).strip()
+        if not text:
+            raise ValueError(
+                f"PDF документ «{file_name}» не содержит распознаваемого текстового слоя "
+                f"(возможно, документ является отсканированным изображением). "
+                f"Пожалуйста, используйте текстовый PDF, DOCX или Markdown."
+            )
+        return text
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"Ошибка чтения PDF файла «{file_name}»: {exc}")
 
 
 def validate_and_extract_md_file(uploaded_file):
     """
     Проверяет загруженный файл:
-    - Расширение .md или .markdown
-    - Размер <= MAX_MD_FILE_SIZE (2 МБ) и > 0 байт
-    - Текстовый формат в кодировке UTF-8 без нулевых бинарных байтов
+    - Расширение .md, .markdown, .txt, .docx, .pdf
+    - Размер <= MAX_UPLOAD_DOC_SIZE (10 МБ) и > 0 байт
+    - Извлекает текстовое содержимое
     Возвращает кортеж: (is_valid, file_name, text_content, error_message)
     """
     if not uploaded_file:
         return True, "", "", None
 
-    file_name = getattr(uploaded_file, 'name', '') or 'document.md'
+    file_name = getattr(uploaded_file, 'name', '') or 'document.txt'
     ext = os.path.splitext(file_name)[1].lower()
-    if ext not in ALLOWED_MD_EXTENSIONS:
+    if ext not in ALLOWED_DOC_EXTENSIONS:
+        allowed_str = ', '.join(ALLOWED_DOC_EXTENSIONS)
         return False, file_name, "", (
             f"Недопустимый формат файла «{file_name}». "
-            f"Разрешены только текстовые файлы Markdown с расширением .md или .markdown."
+            f"Разрешены документы форматов: {allowed_str}."
         )
 
     file_size = getattr(uploaded_file, 'size', 0)
-    if file_size > MAX_MD_FILE_SIZE:
-        max_mb = MAX_MD_FILE_SIZE // (1024 * 1024)
+    # 2 МБ лимит для текстовых файлов (md, txt), 10 МБ лимит для офисных документов (docx, pdf)
+    max_allowed_size = 2 * 1024 * 1024 if ext in ('.md', '.markdown', '.txt') else MAX_UPLOAD_DOC_SIZE
+    if file_size > max_allowed_size:
+        max_mb = max_allowed_size // (1024 * 1024)
         return False, file_name, "", (
             f"Размер файла «{file_name}» ({round(file_size / 1024, 1)} КБ) "
             f"превышает допустимый лимит {max_mb} МБ."
@@ -627,14 +704,31 @@ def validate_and_extract_md_file(uploaded_file):
     if not raw_bytes or len(raw_bytes.strip()) == 0:
         return False, file_name, "", f"Прикрепленный файл «{file_name}» пуст."
 
+    # DOCX extraction
+    if ext == '.docx':
+        try:
+            content = extract_text_from_docx(raw_bytes, file_name)
+            return True, file_name, content, None
+        except Exception as exc:
+            return False, file_name, "", str(exc)
+
+    # PDF extraction
+    if ext == '.pdf':
+        try:
+            content = extract_text_from_pdf(raw_bytes, file_name)
+            return True, file_name, content, None
+        except Exception as exc:
+            return False, file_name, "", str(exc)
+
+    # Plaintext / Markdown / TXT: must not contain binary null bytes
     if b'\x00' in raw_bytes:
         return False, file_name, "", (
             f"Файл «{file_name}» содержит бинарные данные. "
-            f"Ожидается текстовый документ в формате Markdown."
+            f"Ожидается текстовый документ в формате Markdown или TXT."
         )
 
     text_content = None
-    for encoding in ('utf-8', 'utf-8-sig', 'windows-1251'):
+    for encoding in ('utf-8', 'utf-8-sig', 'windows-1251', 'cp1251'):
         try:
             text_content = raw_bytes.decode(encoding)
             break
@@ -643,7 +737,7 @@ def validate_and_extract_md_file(uploaded_file):
 
     if text_content is None:
         return False, file_name, "", (
-            f"Не удалось распознать кодировку файла «{file_name}». "
+            f"Не удалось распознать кодировку текстового файла «{file_name}». "
             f"Пожалуйста, сохраните файл в кодировке UTF-8."
         )
 
@@ -656,14 +750,14 @@ def validate_and_extract_md_file(uploaded_file):
 
 def merge_prompt_with_md(prompt: str, file_name: str, file_content: str) -> str:
     """
-    Объединяет пользовательский текст промпта и прикрепленный Markdown-документ.
+    Объединяет пользовательский текст промпта и прикрепленный документ (MD, TXT, DOCX, PDF).
     """
     prompt = (prompt or '').strip()
     file_content = (file_content or '').strip()
     if not file_content:
         return prompt
 
-    separator = f"\n\n---\n📎 **Прикрепленный документ: `{file_name}`**\n\n```markdown\n{file_content}\n```"
+    separator = f"\n\n---\n📎 **Прикрепленный документ: `{file_name}`**\n\n```text\n{file_content}\n```"
     if prompt:
         return f"{prompt}{separator}"
     else:

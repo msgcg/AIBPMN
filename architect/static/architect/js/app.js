@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastVisualDsl = null;
   let compileTimer = null;
   let visualSyncTimer = null;
+  let lastSourceOfChange = 'init'; // 'code' | 'visual' | 'ai' | 'loaded'
 
   // ── Prism BPMN-as-Code Syntax Grammar ─────────────────────────────────
   if (window.Prism) {
@@ -542,6 +543,20 @@ document.addEventListener('DOMContentLoaded', () => {
     return '';
   }
 
+  function detectLoopType(el) {
+    if (el.getElementsByTagNameNS('*', 'standardLoopCharacteristics').length > 0 ||
+      Array.from(el.children).some(c => (c.localName || c.tagName).includes('standardLoopCharacteristics'))) {
+      return ' loop';
+    }
+    const multi = el.getElementsByTagNameNS('*', 'multiInstanceLoopCharacteristics')[0] ||
+      Array.from(el.children).find(c => (c.localName || c.tagName).includes('multiInstanceLoopCharacteristics'));
+    if (multi) {
+      const isSeq = multi.getAttribute('isSequential') === 'true';
+      return isSeq ? ' loop sequential' : ' loop parallel';
+    }
+    return '';
+  }
+
   function decompileXml(xml) {
     try {
       const doc = new DOMParser().parseFromString(xml, 'application/xml');
@@ -552,6 +567,71 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!proc) return '# Не удалось распарсить BPMN процесс\n';
 
       const processName = proc.getAttribute('name') || 'Бизнес-процесс';
+      const procId = proc.getAttribute('id') || 'Process_1';
+
+      // 1. Collaboration, Pools & Message Flows
+      const poolLines = [];
+      const messageFlowLines = [];
+      let mainPoolId = '';
+      const collabs = doc.getElementsByTagNameNS('*', 'collaboration');
+      for (let c = 0; c < collabs.length; c++) {
+        const collab = collabs[c];
+        const participants = collab.getElementsByTagNameNS('*', 'participant');
+        for (let i = 0; i < participants.length; i++) {
+          const p = participants[i];
+          const pid = p.getAttribute('id');
+          if (!pid) continue;
+          const pname = (p.getAttribute('name') || pid).replace(/[\n\r]+/g, ' ').trim();
+          const pRef = p.getAttribute('processRef');
+          if (pRef === procId || (!mainPoolId && pRef)) mainPoolId = pid;
+          poolLines.push(`pool: ${pid} "${pname}"`);
+        }
+
+        const msgFlows = collab.getElementsByTagNameNS('*', 'messageFlow');
+        for (let i = 0; i < msgFlows.length; i++) {
+          const mf = msgFlows[i];
+          const mSource = mf.getAttribute('sourceRef');
+          const mTarget = mf.getAttribute('targetRef');
+          const mName = (mf.getAttribute('name') || '').replace(/[\n\r]+/g, ' ').trim();
+          if (mSource && mTarget) {
+            if (mName) {
+              messageFlowLines.push(`${mSource} ~> ${mTarget} "${mName}"`);
+            } else {
+              messageFlowLines.push(`${mSource} ~> ${mTarget}`);
+            }
+          }
+        }
+      }
+
+      // 2. LaneSets & Lanes
+      const laneLines = [];
+      const nodeToLane = new Map();
+      const laneSets = proc.getElementsByTagNameNS('*', 'laneSet');
+      for (let s = 0; s < laneSets.length; s++) {
+        const lanes = laneSets[s].getElementsByTagNameNS('*', 'lane');
+        for (let i = 0; i < lanes.length; i++) {
+          const l = lanes[i];
+          const lid = l.getAttribute('id');
+          if (!lid) continue;
+          const lname = (l.getAttribute('name') || lid).replace(/[\n\r]+/g, ' ').trim();
+          const poolRef = mainPoolId ? ` in ${mainPoolId}` : '';
+          laneLines.push(`lane: ${lid} "${lname}"${poolRef}`);
+
+          const refs = l.getElementsByTagNameNS('*', 'flowNodeRef');
+          for (let r = 0; r < refs.length; r++) {
+            const refId = (refs[r].textContent || '').trim();
+            if (refId) nodeToLane.set(refId, lid);
+          }
+        }
+      }
+
+      // 3. Process elements & default flow mapping
+      const defaultFlowIds = new Set();
+      for (const el of proc.children) {
+        const def = el.getAttribute('default');
+        if (def) defaultFlowIds.add(def);
+      }
+
       const buckets = {
         start: [], end: [], catch_throw: [], boundary: [],
         task: [], gateway: [], subprocess: [], call: []
@@ -560,22 +640,24 @@ document.addEventListener('DOMContentLoaded', () => {
       const knownIds = new Set();
 
       for (const el of proc.children) {
-        const tag = el.localName;
+        const tag = el.localName || el.tagName.split(':').pop();
         const id = el.getAttribute('id');
         if (!id) continue;
         const name = (el.getAttribute('name') || id).replace(/[\n\r]+/g, ' ').trim();
+        const laneMod = nodeToLane.has(id) ? ` in ${nodeToLane.get(id)}` : '';
+        const loopMod = detectLoopType(el);
 
         if (tag === 'startEvent') {
-          buckets.start.push(`start: ${id} "${name}"${detectEventType(el)}`);
+          buckets.start.push(`start: ${id} "${name}"${detectEventType(el)}${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'endEvent') {
-          buckets.end.push(`end: ${id} "${name}"${detectEventType(el)}`);
+          buckets.end.push(`end: ${id} "${name}"${detectEventType(el)}${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'intermediateCatchEvent') {
-          buckets.catch_throw.push(`catch: ${id} "${name}"${detectEventType(el)}`);
+          buckets.catch_throw.push(`catch: ${id} "${name}"${detectEventType(el)}${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'intermediateThrowEvent') {
-          buckets.catch_throw.push(`throw: ${id} "${name}"${detectEventType(el)}`);
+          buckets.catch_throw.push(`throw: ${id} "${name}"${detectEventType(el)}${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'boundaryEvent') {
           const attachedTo = el.getAttribute('attachedToRef') || '';
@@ -584,32 +666,46 @@ document.addEventListener('DOMContentLoaded', () => {
           knownIds.add(id);
         } else if (TASK_TAGS.has(tag)) {
           const taskType = TASK_TYPE_MAP[tag] ? ` ${TASK_TYPE_MAP[tag]}` : '';
-          buckets.task.push(`task: ${id} "${name}"${taskType}`);
+          const docEls = el.getElementsByTagNameNS('*', 'documentation');
+          const perf = docEls.length > 0 ? (docEls[0].textContent || '').trim() : '';
+          const byMod = (perf && !nodeToLane.has(id)) ? ` by "${perf}"` : '';
+          buckets.task.push(`task: ${id} "${name}"${taskType}${loopMod}${byMod}${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'exclusiveGateway') {
-          buckets.gateway.push(`gateway: ${id} "${name}" exclusive`);
+          buckets.gateway.push(`gateway: ${id} "${name}" exclusive${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'parallelGateway') {
-          buckets.gateway.push(`gateway: ${id} "${name}" parallel`);
+          buckets.gateway.push(`gateway: ${id} "${name}" parallel${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'inclusiveGateway') {
-          buckets.gateway.push(`gateway: ${id} "${name}" inclusive`);
+          buckets.gateway.push(`gateway: ${id} "${name}" inclusive${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'eventBasedGateway') {
-          buckets.gateway.push(`gateway: ${id} "${name}" event-based`);
+          buckets.gateway.push(`gateway: ${id} "${name}" event-based${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'subProcess') {
-          buckets.subprocess.push(`subprocess: ${id} "${name}"`);
+          buckets.subprocess.push(`subprocess: ${id} "${name}"${loopMod}${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'callActivity') {
-          buckets.call.push(`call: ${id} "${name}"`);
+          buckets.call.push(`call: ${id} "${name}"${laneMod}`);
           knownIds.add(id);
         } else if (tag === 'sequenceFlow') {
           const source = el.getAttribute('sourceRef');
           const target = el.getAttribute('targetRef');
-          const flowName = el.getAttribute('name');
+          const flowId = el.getAttribute('id');
+          const isDefault = flowId && defaultFlowIds.has(flowId);
+
+          let flowName = el.getAttribute('name');
+          if (!flowName) {
+            const condEls = el.getElementsByTagNameNS('*', 'conditionExpression');
+            if (condEls.length > 0 && condEls[0].textContent) {
+              flowName = condEls[0].textContent.trim();
+            }
+          }
           if (source && target) {
-            if (flowName && flowName.trim()) {
+            if (isDefault) {
+              flowLines.push(`${source} ==> ${target}`);
+            } else if (flowName && flowName.trim()) {
               flowLines.push(`${source} --[${flowName.trim()}]--> ${target}`);
             } else {
               flowLines.push(`${source} -> ${target}`);
@@ -625,11 +721,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       };
 
+      if (poolLines.length > 0 || laneLines.length > 0) {
+        addSection('Пулы и дорожки', [...poolLines, ...laneLines]);
+      }
       addSection('События', [...buckets.start, ...buckets.catch_throw, ...buckets.boundary, ...buckets.end]);
       addSection('Задачи', buckets.task);
       addSection('Шлюзы', buckets.gateway);
       addSection('Подпроцессы', [...buckets.subprocess, ...buckets.call]);
       addSection('Потоки управления', flowLines);
+      if (messageFlowLines.length > 0) {
+        addSection('Потоки сообщений', messageFlowLines);
+      }
 
       return dsl.trim() + '\n';
     } catch (e) {
@@ -642,6 +744,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (modeler) {
     const onCanvasChange = () => {
       if (isImporting) return;
+      lastSourceOfChange = 'visual';
       clearTimeout(visualSyncTimer);
       visualSyncTimer = setTimeout(async () => {
         try {
@@ -782,6 +885,7 @@ document.addEventListener('DOMContentLoaded', () => {
       updateLineNumbers();
       updateDslHighlight();
       if (codeFromVisual) return;
+      lastSourceOfChange = 'code';
       clearTimeout(compileTimer);
       compileTimer = setTimeout(compileCode, 400);
     });
@@ -819,6 +923,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (content) content.classList.add('active');
 
     if (tabId === 'tab-dsl') {
+      if (lastSourceOfChange === 'visual' && modeler && !isImporting) {
+        clearTimeout(visualSyncTimer);
+        modeler.saveXML({ format: true }).then(({ xml }) => {
+          updateXmlViewer(xml);
+          const newDsl = decompileXml(xml);
+          if (newDsl && newDsl !== lastVisualDsl && (!codeEditor || newDsl !== codeEditor.value)) {
+            codeFromVisual = true;
+            lastVisualDsl = newDsl;
+            if (codeEditor) {
+              codeEditor.value = newDsl;
+              updateLineNumbers();
+              updateDslHighlight();
+            }
+            showSyncPill();
+            setTimeout(() => { codeFromVisual = false; }, 300);
+          }
+        }).catch(err => console.warn('Tab switch visual sync error:', err));
+      }
       updateLineNumbers();
       updateDslHighlight();
     }
@@ -940,7 +1062,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (attachMdBtn) {
         attachMdBtn.classList.remove('has-file');
         const lbl = attachMdBtn.querySelector('.attach-btn-label');
-        if (lbl) lbl.textContent = 'Прикрепить .md';
+        if (lbl) lbl.textContent = 'Прикрепить файл';
       }
       if (attachMdInput) attachMdInput.value = '';
       return;
@@ -948,15 +1070,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const name = file.name || '';
     const ext = name.toLowerCase().split('.').pop();
-    if (ext !== 'md' && ext !== 'markdown') {
-      showToast('Разрешены только файлы Markdown (.md, .markdown)', 'warn');
+    const allowedExts = ['md', 'markdown', 'txt', 'docx', 'pdf'];
+    if (!allowedExts.includes(ext)) {
+      showToast('Разрешены форматы: .md, .txt, .docx, .pdf', 'warn');
       if (attachMdInput) attachMdInput.value = '';
       return;
     }
 
-    const MAX_SIZE = 2 * 1024 * 1024;
+    const MAX_SIZE = 10 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
-      showToast('Размер файла превышает 2 МБ', 'warn');
+      showToast('Размер файла превышает 10 МБ', 'warn');
       if (attachMdInput) attachMdInput.value = '';
       return;
     }
@@ -968,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (attachMdBtn) {
       attachMdBtn.classList.add('has-file');
       const lbl = attachMdBtn.querySelector('.attach-btn-label');
-      if (lbl) lbl.textContent = 'Заменить .md';
+      if (lbl) lbl.textContent = 'Заменить файл';
     }
     refreshIcons();
   }
@@ -1000,9 +1123,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // 1. Immediately flush any pending changes from visual modeler into DSL
+      // 1. Immediately flush pending changes according to last source of edit
       let currentDsl = codeEditor ? codeEditor.value.trim() : '';
-      if (modeler) {
+      if (lastSourceOfChange === 'visual' && modeler) {
+        clearTimeout(visualSyncTimer);
         try {
           const { xml } = await modeler.saveXML({ format: true });
           updateXmlViewer(xml);
@@ -1018,6 +1142,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
           console.warn('Pre-generate visual sync warning:', err);
         }
+      } else if (lastSourceOfChange === 'code') {
+        clearTimeout(compileTimer);
+        compileCode();
+        currentDsl = codeEditor ? codeEditor.value.trim() : '';
       }
 
       // 2. Switch to Chat tab
@@ -1101,6 +1229,7 @@ document.addEventListener('DOMContentLoaded', () => {
             codeEditor.value = res.dsl_code;
             updateLineNumbers();
             updateDslHighlight();
+            lastSourceOfChange = 'ai';
             compileCode();
           }
         }
@@ -1241,6 +1370,7 @@ document.addEventListener('DOMContentLoaded', () => {
           codeEditor.value = res.dsl_code;
           updateLineNumbers();
           updateDslHighlight();
+          lastSourceOfChange = 'ai';
           const retryRes = compileCode();
           if (retryRes && !retryRes.valid && retryCount < 5 && !abortController.signal.aborted) {
             await requestCorrection(retryRes.error, res.dsl_code, retryCount + 1);
@@ -1778,6 +1908,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (codeEditor) codeEditor.value = data.diagram.dsl_code || '';
         updateLineNumbers();
         updateDslHighlight();
+        lastSourceOfChange = 'loaded';
         compileCode();
 
         if (chatContainer) chatContainer.innerHTML = '';
@@ -1895,12 +2026,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (!currentDiagramId) return { success: false, error: 'Нет активной диаграммы' };
     let xml = '';
-    if (modeler) {
+    if (lastSourceOfChange === 'visual' && modeler) {
+      clearTimeout(visualSyncTimer);
       try {
         const res = await modeler.saveXML({ format: true });
         xml = res.xml;
+        const newDsl = decompileXml(xml);
+        if (newDsl && codeEditor) {
+          codeEditor.value = newDsl;
+          updateLineNumbers();
+          updateDslHighlight();
+        }
       } catch (e) {
-        console.warn('saveCurrentDiagram xml export error:', e);
+        console.warn('saveCurrentDiagram visual sync error:', e);
+      }
+    } else {
+      if (lastSourceOfChange === 'code') {
+        clearTimeout(compileTimer);
+        const comp = compileCode();
+        if (comp && comp.xml) xml = comp.xml;
+      }
+      if (!xml && modeler) {
+        try {
+          const res = await modeler.saveXML({ format: true });
+          xml = res.xml;
+        } catch (e) {
+          console.warn('saveCurrentDiagram xml fallback error:', e);
+        }
       }
     }
     try {
@@ -2273,6 +2425,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Export BPMN 2.0 XML (.bpmn)
+  const exportBpmnBtn = document.getElementById('export-bpmn-btn');
+  if (exportBpmnBtn) {
+    exportBpmnBtn.addEventListener('click', async () => {
+      if (exportMenu) exportMenu.classList.remove('open');
+      try {
+        let xml = '';
+        if (modeler) {
+          const res = await modeler.saveXML({ format: true });
+          xml = res.xml;
+        } else if (codeEditor && window.BpmnAsCode) {
+          const res = window.BpmnAsCode.compile(codeEditor.value);
+          xml = res.xml;
+        }
+        if (!xml) {
+          throw new Error('Диаграмма пуста или не скомпилирована');
+        }
+        const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
+        downloadBlob(blob, getDiagramFilename('bpmn'));
+        showToast('Диаграмма экспортирована в BPMN 2.0 (.bpmn)', 'success');
+      } catch (e) {
+        console.error('BPMN Export failed:', e);
+        showToast('Ошибка экспорта BPMN: ' + (e.message || e), 'error');
+      }
+    });
+  }
+
   // Export SVG
   const exportSvgBtn = document.getElementById('export-svg-btn');
   if (exportSvgBtn) {
@@ -2419,6 +2598,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Mobile View Toggle & More Menu ────────────────────────────────────
   function setMobileView(view) {
     if (view === 'canvas') {
+      if (lastSourceOfChange === 'code') {
+        clearTimeout(compileTimer);
+        compileCode();
+      }
       document.body.classList.remove('mobile-view-panel');
       document.body.classList.add('mobile-view-canvas');
       if (mobileBtnCanvas) {
@@ -2433,6 +2616,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 80);
       }
     } else {
+      if (lastSourceOfChange === 'visual' && modeler && !isImporting) {
+        clearTimeout(visualSyncTimer);
+        modeler.saveXML({ format: true }).then(({ xml }) => {
+          const newDsl = decompileXml(xml);
+          if (newDsl && codeEditor) {
+            codeEditor.value = newDsl;
+            updateLineNumbers();
+            updateDslHighlight();
+          }
+        }).catch(() => {});
+      }
       document.body.classList.remove('mobile-view-canvas');
       document.body.classList.add('mobile-view-panel');
       if (mobileBtnPanel) {
@@ -2515,21 +2709,37 @@ document.addEventListener('DOMContentLoaded', () => {
       const reader = new FileReader();
       reader.onload = async (ev) => {
         try {
-          const text = ev.target.result;
-          if (codeEditor) {
-            codeEditor.value = text;
-            updateLineNumbers();
-            updateDslHighlight();
-          }
-          const compResult = compileCode();
-          if (compResult.valid) {
+          const text = ev.target.result || '';
+          if (text.trim().startsWith('<')) {
+            // BPMN 2.0 XML file
+            await loadIntoModeler(text);
+            const decomp = decompileXml(text);
+            if (codeEditor && decomp) {
+              codeEditor.value = decomp;
+              updateLineNumbers();
+              updateDslHighlight();
+            }
+            lastSourceOfChange = 'visual';
             await saveCurrentDiagram(true);
-            showToast(`Файл DSL «${file.name}» успешно импортирован и сохранен`, 'success');
+            showToast(`Файл BPMN XML «${file.name}» успешно импортирован`, 'success');
           } else {
-            showToast(`Файл «${file.name}» импортирован, но содержит синтаксические ошибки`, 'warn');
+            // DSL file
+            if (codeEditor) {
+              codeEditor.value = text;
+              updateLineNumbers();
+              updateDslHighlight();
+            }
+            lastSourceOfChange = 'code';
+            const compResult = compileCode();
+            if (compResult.valid) {
+              await saveCurrentDiagram(true);
+              showToast(`Файл DSL «${file.name}» успешно импортирован и сохранен`, 'success');
+            } else {
+              showToast(`Файл «${file.name}» импортирован, но содержит синтаксические ошибки`, 'warn');
+            }
           }
         } catch (err) {
-          showToast('Ошибка импорта DSL файла: ' + err.message, 'error');
+          showToast('Ошибка импорта файла: ' + err.message, 'error');
         } finally {
           importDslInput.value = '';
         }

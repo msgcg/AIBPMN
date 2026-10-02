@@ -89,6 +89,10 @@
           <i data-lucide="chevron-down" class="icon-sm"></i>
         </button>
         <div id="export-menu" class="dropdown-menu">
+          <div class="dropdown-item" id="export-bpmn-btn">
+            <i data-lucide="file-code" class="icon"></i>
+            <span>Файл BPMN 2.0 (.bpmn)</span>
+          </div>
           <div class="dropdown-item" id="export-pdf-btn">
             <i data-lucide="file-text" class="icon"></i>
             <span>Документ PDF (Вектор)</span>
@@ -299,10 +303,10 @@
             <textarea id="chat-prompt" placeholder="Опишите процесс на русском языке или дайте команду доработки (например: «добавь проверку директором если сумма > 100 000»)..."></textarea>
             <div class="input-controls">
               <div class="input-controls-left">
-                <input type="file" id="attach-md-input" accept=".md,.markdown,text/markdown" style="display:none;">
-                <button type="button" id="attach-md-btn" class="btn btn-ghost btn-sm" title="Прикрепить Markdown-документ (.md)">
+                <input type="file" id="attach-md-input" accept=".md,.markdown,.txt,.docx,.pdf,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none;">
+                <button type="button" id="attach-md-btn" class="btn btn-ghost btn-sm" title="Прикрепить документ (.md, .txt, .docx, .pdf)">
                   <i data-lucide="paperclip" class="icon-sm"></i>
-                  <span class="attach-btn-label">Прикрепить .md</span>
+                  <span class="attach-btn-label">Прикрепить файл</span>
                 </button>
                 <span class="input-hint" style="font-size:0.72rem; color:var(--text-muted);">Shift+Enter — перенос строки</span>
               </div>
