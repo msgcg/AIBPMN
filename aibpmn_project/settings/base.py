@@ -84,4 +84,6 @@ MAX_KB_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 GIGACHAT_DEFAULT_SCOPE = 'GIGACHAT_API_PERS'
 GIGACHAT_MODEL = 'GigaChat-3-Ultra'
 
-
+# Configurable SQLite database path (for Docker volume persistence or local db.sqlite3)
+SQLITE_DB_PATH = Path(os.getenv('SQLITE_DB_PATH', str(BASE_DIR / 'db.sqlite3')))
+SQLITE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)

@@ -14,7 +14,7 @@ if not env_secret or env_secret == 'django-insecure-aibpmn-architecture-suite-20
 SECRET_KEY = env_secret or SECRET_KEY
 
 # Allowed Hosts from environment (comma-separated: e.g. "example.com,www.example.com")
-allowed_hosts_str = os.getenv('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0')
+allowed_hosts_str = os.getenv('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0,*')
 ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_str.split(',') if h.strip()]
 
 # CSRF Trusted Origins
@@ -22,11 +22,11 @@ csrf_origins_str = os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '')
 if csrf_origins_str:
     CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_origins_str.split(',') if o.strip()]
 
-# Production Database (SQLite by default, or configurable via DATABASE_URL)
+# Production Database (SQLite by default, configurable via SQLITE_DB_PATH)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': SQLITE_DB_PATH,
     }
 }
 
