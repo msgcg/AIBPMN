@@ -14,7 +14,7 @@ if not env_secret or env_secret == 'django-insecure-aibpmn-architecture-suite-20
 SECRET_KEY = env_secret or SECRET_KEY
 
 # Allowed Hosts from environment (comma-separated: e.g. "example.com,www.example.com")
-allowed_hosts_str = os.getenv('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost')
+allowed_hosts_str = os.getenv('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0')
 ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_str.split(',') if h.strip()]
 
 # CSRF Trusted Origins
@@ -30,9 +30,9 @@ DATABASES = {
     }
 }
 
-# Production Security & Cookie Settings
-SESSION_COOKIE_SECURE = os.getenv('DJANGO_COOKIE_SECURE', 'True').lower() == 'true'
-CSRF_COOKIE_SECURE = os.getenv('DJANGO_COOKIE_SECURE', 'True').lower() == 'true'
+# Production Security & Cookie Settings (False by default so local HTTP /admin/ login works unless HTTPS is enabled)
+SESSION_COOKIE_SECURE = os.getenv('DJANGO_COOKIE_SECURE', 'False').lower() == 'true'
+CSRF_COOKIE_SECURE = os.getenv('DJANGO_COOKIE_SECURE', 'False').lower() == 'true'
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False  # Allows JS CSRF extraction if needed
 

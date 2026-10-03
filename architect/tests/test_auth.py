@@ -334,3 +334,34 @@ class AuthApiTests(TestCase):
         resp_me = self.client.get('/api/auth/me/')
         self.assertFalse(resp_me.json()['authenticated'])
 
+    def test_default_admin_auto_recreated_and_admin_login_works(self):
+        # Even if all users are deleted, logging in as max / Admin2026!Bpmn auto-creates the admin user
+        User.objects.all().delete()
+        self.assertEqual(User.objects.count(), 0)
+
+        # 1. Test Django /admin/login/
+        resp_admin = self.client.post(
+            '/admin/login/',
+            {'username': 'max', 'password': 'Admin2026!Bpmn', 'next': '/admin/'}
+        )
+        self.assertEqual(resp_admin.status_code, 302)
+        self.assertEqual(resp_admin.headers.get('Location'), '/admin/')
+
+        admin_user = User.objects.get(username='max')
+        self.assertTrue(admin_user.is_staff)
+        self.assertTrue(admin_user.is_superuser)
+        self.assertTrue(admin_user.is_active)
+
+        # 2. Test app login (/api/auth/login/) as regular user with same credentials
+        self.client.logout()
+        User.objects.all().delete()
+        resp_app = self.client.post(
+            '/api/auth/login/',
+            data=json.dumps({'username': 'max', 'password': 'Admin2026!Bpmn'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp_app.status_code, 200)
+        self.assertTrue(resp_app.json()['success'])
+        self.assertEqual(resp_app.json()['user']['username'], 'max')
+
+

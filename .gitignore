@@ -1,9 +1,14 @@
 sources/
 .venv*/
 .env*
+!.env.example
+!.env.production.example
+db.sqlite3
 *.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
 __pycache__/
 *.pyc
 staticfiles/
 static_collected/
-

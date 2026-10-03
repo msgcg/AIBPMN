@@ -38,7 +38,7 @@
   <link rel="stylesheet" href="{% static 'architect/vendor/prism.min.css' %}"/>
 
   <!-- Custom App CSS (UI/UX Pro Max) -->
-  <link rel="stylesheet" href="{% static 'architect/css/app.css' %}?v=2.9"/>
+  <link rel="stylesheet" href="{% static 'architect/css/app.css' %}?v=3.0"/>
 </head>
 <body>
 
@@ -1137,9 +1137,10 @@ join_fulfillment -> courier_delivery -> order_delivered</div>
 
   <!-- ── Compact Attached Document Viewer Modal (MD / DOCX / PDF / TXT) ── -->
   <div id="doc-viewer-modal" class="doc-viewer-modal" style="display:none;">
-    <div class="doc-viewer-box">
-      <div class="doc-viewer-header">
+    <div id="doc-viewer-box" class="doc-viewer-box">
+      <div id="doc-viewer-header" class="doc-viewer-header" title="Зажмите и потяните, чтобы переместить окно">
         <div class="doc-viewer-title-wrap">
+          <i data-lucide="grip-vertical" class="icon-xs doc-viewer-drag-grip"></i>
           <span id="doc-viewer-ext-badge" class="doc-viewer-ext-badge">DOC</span>
           <div class="doc-viewer-title-info">
             <span id="doc-viewer-filename" class="doc-viewer-filename">document.md</span>
@@ -1189,7 +1190,7 @@ join_fulfillment -> courier_delivery -> order_delivered</div>
 
   <!-- Vendor Scripts -->
   <script src="{% static 'architect/vendor/bpmn-modeler.production.min.js' %}"></script>
-  <script src="{% static 'architect/vendor/compiler.js' %}?v=2.9"></script>
+  <script src="{% static 'architect/vendor/compiler.js' %}?v=3.0"></script>
   <script src="{% static 'architect/vendor/lucide.min.js' %}"></script>
   <script>if (window.lucide) window.lucide.createIcons();</script>
   <script src="{% static 'architect/vendor/jspdf.umd.min.js' %}"></script>
@@ -1198,7 +1199,7 @@ join_fulfillment -> courier_delivery -> order_delivered</div>
   <script src="{% static 'architect/vendor/prism.min.js' %}"></script>
 
   <!-- App Script -->
-  <script src="{% static 'architect/js/app.js' %}?v=2.9"></script>
+  <script src="{% static 'architect/js/app.js' %}?v=3.0"></script>
 </body>
 </html>
 

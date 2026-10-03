@@ -1358,13 +1358,21 @@ document.addEventListener('DOMContentLoaded', () => {
       return `<li>${escapeHtml(clean).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')}</li>`;
     }).join('');
     return `
-      <div class="validation-report-card">
-        <div class="report-title">
-          <i data-lucide="shield-check" class="icon"></i>
-          <span>Отчет валидации процесса</span>
+      <details class="validation-report-card collapsible-card">
+        <summary class="report-title collapsible-summary">
+          <div class="collapsible-title-left">
+            <i data-lucide="shield-check" class="icon"></i>
+            <span>Отчет валидации процесса</span>
+          </div>
+          <div class="collapsible-title-right">
+            <span class="collapsible-hint"></span>
+            <i data-lucide="chevron-down" class="icon-sm collapsible-chevron"></i>
+          </div>
+        </summary>
+        <div class="collapsible-body">
+          <ul>${listItems}</ul>
         </div>
-        <ul>${listItems}</ul>
-      </div>
+      </details>
     `;
   }
 
@@ -1392,14 +1400,22 @@ document.addEventListener('DOMContentLoaded', () => {
     chips.push('<button type="button" class="proactive-chip" data-answer="Доработай схему с учетом стандартного регламента">Стандартный регламент</button>');
 
     return `
-      <div class="proactive-questions-card">
-        <div class="questions-title">
-          <i data-lucide="help-circle" class="icon"></i>
-          <span>Уточняющие вопросы по регламенту</span>
+      <details class="proactive-questions-card collapsible-card">
+        <summary class="questions-title collapsible-summary">
+          <div class="collapsible-title-left">
+            <i data-lucide="help-circle" class="icon"></i>
+            <span>Уточняющие вопросы по регламенту</span>
+          </div>
+          <div class="collapsible-title-right">
+            <span class="collapsible-hint"></span>
+            <i data-lucide="chevron-down" class="icon-sm collapsible-chevron"></i>
+          </div>
+        </summary>
+        <div class="collapsible-body">
+          <ul>${listItems}</ul>
+          <div class="chips-container">${chips.join('')}</div>
         </div>
-        <ul>${listItems}</ul>
-        <div class="chips-container">${chips.join('')}</div>
-      </div>
+      </details>
     `;
   }
 
@@ -1456,11 +1472,96 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Attached Document Parser & Compact Modal Viewer ────────────────────
   const docViewerModal = document.getElementById('doc-viewer-modal');
+  const docViewerBox = document.getElementById('doc-viewer-box');
+  const docViewerHeader = document.getElementById('doc-viewer-header');
   const docViewerExtBadge = document.getElementById('doc-viewer-ext-badge');
   const docViewerFilename = document.getElementById('doc-viewer-filename');
   const docViewerBody = document.getElementById('doc-viewer-body');
   const docViewerClose = document.getElementById('doc-viewer-close');
   let currentOpenDoc = null;
+  let docDragOffsetX = 0;
+  let docDragOffsetY = 0;
+
+  // Draggable modal logic
+  if (docViewerHeader && docViewerBox) {
+    let isDraggingDocModal = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let initialOffsetX = 0;
+    let initialOffsetY = 0;
+
+    const clampDocModalOffsets = (nextX, nextY) => {
+      // Temporarily reset transform to get base CSS layout rect
+      const prevTransform = docViewerBox.style.transform;
+      docViewerBox.style.transform = 'translate3d(0px, 0px, 0px)';
+      const baseRect = docViewerBox.getBoundingClientRect();
+      docViewerBox.style.transform = prevTransform;
+
+      const margin = 8;
+      const minX = margin - baseRect.left;
+      const maxX = window.innerWidth - margin - baseRect.right;
+      const minY = margin - baseRect.top;
+      const maxY = window.innerHeight - margin - baseRect.bottom;
+
+      return {
+        x: Math.min(Math.max(nextX, minX), Math.max(minX, maxX)),
+        y: Math.min(Math.max(nextY, minY), Math.max(minY, maxY))
+      };
+    };
+
+    const startDocDrag = (clientX, clientY, target) => {
+      if (target && target.closest('#doc-viewer-close')) return;
+      isDraggingDocModal = true;
+      dragStartX = clientX;
+      dragStartY = clientY;
+      initialOffsetX = docDragOffsetX;
+      initialOffsetY = docDragOffsetY;
+      docViewerBox.classList.add('dragging');
+    };
+
+    const moveDocDrag = (clientX, clientY) => {
+      if (!isDraggingDocModal) return;
+      const dx = clientX - dragStartX;
+      const dy = clientY - dragStartY;
+      const clamped = clampDocModalOffsets(initialOffsetX + dx, initialOffsetY + dy);
+      docDragOffsetX = clamped.x;
+      docDragOffsetY = clamped.y;
+      docViewerBox.style.transform = `translate3d(${docDragOffsetX}px, ${docDragOffsetY}px, 0)`;
+    };
+
+    const stopDocDrag = () => {
+      if (!isDraggingDocModal) return;
+      isDraggingDocModal = false;
+      docViewerBox.classList.remove('dragging');
+    };
+
+    docViewerHeader.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      startDocDrag(e.clientX, e.clientY, e.target);
+      if (isDraggingDocModal) e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDraggingDocModal) return;
+      moveDocDrag(e.clientX, e.clientY);
+    });
+
+    window.addEventListener('mouseup', stopDocDrag);
+
+    docViewerHeader.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      startDocDrag(touch.clientX, touch.clientY, e.target);
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (!isDraggingDocModal || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      moveDocDrag(touch.clientX, touch.clientY);
+    }, { passive: true });
+
+    window.addEventListener('touchend', stopDocDrag);
+  }
 
   function parseUserMessageAttachment(rawContent, explicitAttachedDoc) {
     const text = rawContent || '';
@@ -1539,6 +1640,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     docViewerModal.style.display = 'flex';
     docViewerModal.classList.add('open');
+    if (docViewerBox) {
+      docViewerBox.style.transform = `translate3d(${docDragOffsetX}px, ${docDragOffsetY}px, 0)`;
+    }
     refreshIcons();
 
     const targetElId = highlightElementId || activeTraceElementId;
