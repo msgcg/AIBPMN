@@ -808,8 +808,14 @@ def api_generate(request):
             is_valid, f_name, f_content, err_msg = validate_and_extract_md_file(uploaded_file)
             if not is_valid:
                 return JsonResponse({'success': False, 'error': err_msg}, status=400)
+            attached_doc = {
+                'name': f_name,
+                'size': getattr(uploaded_file, 'size', len(f_content.encode('utf-8'))),
+                'content': f_content
+            }
         else:
             f_name, f_content = "", ""
+            attached_doc = None
 
         raw_prompt = data.get('prompt', '').strip()
         prompt = merge_prompt_with_md(raw_prompt, f_name, f_content)
@@ -898,6 +904,7 @@ def api_generate(request):
                 'explanation': explanation,
                 'user_message': user_msg,
                 'assistant_message': assistant_msg,
+                'attached_doc': attached_doc,
                 'guest_mode': True,
                 'attempts': result.get('attempts', 1),
                 'validation_report': result.get('validation_report'),
@@ -1016,6 +1023,7 @@ def api_generate(request):
             'explanation': explanation,
             'user_message': user_msg.to_dict(),
             'assistant_message': assistant_msg.to_dict(),
+            'attached_doc': attached_doc,
             'attempts': result.get('attempts', 1),
             'validation_report': result.get('validation_report'),
             'proactive_questions': result.get('proactive_questions', []),
@@ -1040,8 +1048,14 @@ def api_refine(request):
             is_valid, f_name, f_content, err_msg = validate_and_extract_md_file(uploaded_file)
             if not is_valid:
                 return JsonResponse({'success': False, 'error': err_msg}, status=400)
+            attached_doc = {
+                'name': f_name,
+                'size': getattr(uploaded_file, 'size', len(f_content.encode('utf-8'))),
+                'content': f_content
+            }
         else:
             f_name, f_content = "", ""
+            attached_doc = None
 
         diagram_id = data.get('diagram_id')
         try:
@@ -1117,6 +1131,7 @@ def api_refine(request):
                 'explanation': explanation,
                 'user_message': user_msg,
                 'assistant_message': assistant_msg,
+                'attached_doc': attached_doc,
                 'guest_mode': True,
                 'validation_report': result.get('validation_report'),
                 'proactive_questions': result.get('proactive_questions', []),
@@ -1194,6 +1209,7 @@ def api_refine(request):
             'explanation': explanation,
             'user_message': user_msg.to_dict(),
             'assistant_message': assistant_msg.to_dict(),
+            'attached_doc': attached_doc,
             'validation_report': result.get('validation_report'),
             'proactive_questions': result.get('proactive_questions', []),
             'traceability': result.get('traceability', []),

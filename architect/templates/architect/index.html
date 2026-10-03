@@ -38,7 +38,7 @@
   <link rel="stylesheet" href="{% static 'architect/vendor/prism.min.css' %}"/>
 
   <!-- Custom App CSS (UI/UX Pro Max) -->
-  <link rel="stylesheet" href="{% static 'architect/css/app.css' %}?v=2.6"/>
+  <link rel="stylesheet" href="{% static 'architect/css/app.css' %}?v=2.9"/>
 </head>
 <body>
 
@@ -1135,6 +1135,25 @@ join_fulfillment -> courier_delivery -> order_delivered</div>
   </div>
 
 
+  <!-- ── Compact Attached Document Viewer Modal (MD / DOCX / PDF / TXT) ── -->
+  <div id="doc-viewer-modal" class="doc-viewer-modal" style="display:none;">
+    <div class="doc-viewer-box">
+      <div class="doc-viewer-header">
+        <div class="doc-viewer-title-wrap">
+          <span id="doc-viewer-ext-badge" class="doc-viewer-ext-badge">DOC</span>
+          <div class="doc-viewer-title-info">
+            <span id="doc-viewer-filename" class="doc-viewer-filename">document.md</span>
+            <span id="doc-viewer-subtitle" class="doc-viewer-subtitle">Кликните на подсвеченную фразу для поиска шага на схеме и в коде</span>
+          </div>
+        </div>
+        <button type="button" id="doc-viewer-close" class="btn btn-ghost btn-icon btn-sm" title="Закрыть просмотр документа">
+          <i data-lucide="x" class="icon-sm"></i>
+        </button>
+      </div>
+      <div id="doc-viewer-body" class="doc-viewer-body"></div>
+    </div>
+  </div>
+
   <!-- ── Cookie Consent Banner / Modal ──────────────────────────────────── -->
   <div id="cookie-consent-banner" class="cookie-banner" style="display:none;">
     <div class="cookie-content">
@@ -1170,7 +1189,7 @@ join_fulfillment -> courier_delivery -> order_delivered</div>
 
   <!-- Vendor Scripts -->
   <script src="{% static 'architect/vendor/bpmn-modeler.production.min.js' %}"></script>
-  <script src="{% static 'architect/vendor/compiler.js' %}?v=2.7"></script>
+  <script src="{% static 'architect/vendor/compiler.js' %}?v=2.9"></script>
   <script src="{% static 'architect/vendor/lucide.min.js' %}"></script>
   <script>if (window.lucide) window.lucide.createIcons();</script>
   <script src="{% static 'architect/vendor/jspdf.umd.min.js' %}"></script>
@@ -1179,7 +1198,7 @@ join_fulfillment -> courier_delivery -> order_delivered</div>
   <script src="{% static 'architect/vendor/prism.min.js' %}"></script>
 
   <!-- App Script -->
-  <script src="{% static 'architect/js/app.js' %}?v=2.7"></script>
+  <script src="{% static 'architect/js/app.js' %}?v=2.9"></script>
 </body>
 </html>
 

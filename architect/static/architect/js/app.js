@@ -1201,21 +1201,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // 3. User message representation for chat bubble
       const currentAttachedFile = attachedMdFile;
-      let bubbleText = prompt;
-      if (currentAttachedFile) {
-        const fileChipMd = `\n\n📎 *Прикреплен файл:* \`${escapeHtml(currentAttachedFile.name)}\` (${formatFileSize(currentAttachedFile.size)})`;
-        bubbleText = (prompt ? prompt : 'Построй процесс на основе прикрепленного документа') + fileChipMd;
+      const tempAttachedDoc = currentAttachedFile ? {
+        name: currentAttachedFile.name,
+        size: currentAttachedFile.size,
+        content: ''
+      } : null;
+
+      // If text/md file, pre-read locally for immediate preview
+      if (currentAttachedFile && /\.(md|markdown|txt)$/i.test(currentAttachedFile.name)) {
+        try {
+          tempAttachedDoc.content = await currentAttachedFile.text();
+        } catch (e) { }
       }
-      lastUserPromptText = prompt || bubbleText;
+
+      const displayPrompt = prompt || (currentAttachedFile ? `Построй процесс на основе прикрепленного документа «${currentAttachedFile.name}»` : '');
+      lastUserPromptText = tempAttachedDoc && tempAttachedDoc.content
+        ? `${displayPrompt}\n\n${tempAttachedDoc.content}`
+        : displayPrompt;
 
       const userBubble = appendChatMessage({
         role: 'user',
-        content: bubbleText,
+        content: displayPrompt,
+        attached_doc: tempAttachedDoc,
         created_at: new Date().toLocaleTimeString()
       });
-      if (userBubble) {
-        userBubble.dataset.rawContent = bubbleText;
-      }
       if (promptInput) promptInput.value = '';
 
       // Reset attached file state
@@ -1263,6 +1272,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await resp.json();
         if (res.user_message && userBubble) {
           updateBubbleId(userBubble, res.user_message.id);
+          if (res.user_message.content) {
+            userBubble.dataset.rawContent = res.user_message.content;
+            lastUserPromptText = res.user_message.content;
+          }
+        }
+        if (res.attached_doc && userBubble) {
+          userBubble._attachedDoc = res.attached_doc;
+          if (res.attached_doc.content && !lastUserPromptText.includes(res.attached_doc.content)) {
+            lastUserPromptText = `${displayPrompt}\n\n${res.attached_doc.content}`;
+          }
         }
 
         if (!res.success) {
@@ -1435,7 +1454,158 @@ document.addEventListener('DOMContentLoaded', () => {
     return parsedHtml;
   }
 
-  // ── Traceability & Cross-Synchronization (Diagram <-> Code <-> Chat) ──
+  // ── Attached Document Parser & Compact Modal Viewer ────────────────────
+  const docViewerModal = document.getElementById('doc-viewer-modal');
+  const docViewerExtBadge = document.getElementById('doc-viewer-ext-badge');
+  const docViewerFilename = document.getElementById('doc-viewer-filename');
+  const docViewerBody = document.getElementById('doc-viewer-body');
+  const docViewerClose = document.getElementById('doc-viewer-close');
+  let currentOpenDoc = null;
+
+  function parseUserMessageAttachment(rawContent, explicitAttachedDoc) {
+    const text = rawContent || '';
+    const docSeparatorRegex = /\n*---\n📎\s*\*\*Прикрепленный документ:\s*`([^`]+)`\*\*\s*\n+```text\n([\s\S]*?)```\s*$/i;
+    const match = text.match(docSeparatorRegex);
+
+    let cleanPrompt = text;
+    let parsedDoc = explicitAttachedDoc || null;
+
+    if (match) {
+      cleanPrompt = text.slice(0, match.index).trim();
+      const docName = match[1].trim();
+      const docContent = match[2].trim();
+      if (!parsedDoc || !parsedDoc.content) {
+        parsedDoc = {
+          name: docName,
+          size: parsedDoc && parsedDoc.size ? parsedDoc.size : new Blob([docContent]).size,
+          content: docContent
+        };
+      }
+    }
+
+    return {
+      cleanPrompt: cleanPrompt || (parsedDoc ? `Построй процесс на основе документа «${parsedDoc.name}»` : ''),
+      attachedDoc: parsedDoc
+    };
+  }
+
+  function getDocExtClass(fileName) {
+    const ext = (fileName || '').split('.').pop().toLowerCase();
+    if (ext === 'pdf') return { label: 'PDF', cls: 'ext-pdf' };
+    if (ext === 'docx' || ext === 'doc') return { label: 'DOCX', cls: 'ext-docx' };
+    if (ext === 'md' || ext === 'markdown') return { label: 'MD', cls: 'ext-md' };
+    return { label: ext ? ext.toUpperCase() : 'TXT', cls: 'ext-txt' };
+  }
+
+  function renderAttachedDocCardHtml(attachedDoc) {
+    if (!attachedDoc || !attachedDoc.name) return '';
+    const extInfo = getDocExtClass(attachedDoc.name);
+    const sizeStr = attachedDoc.size ? ` (${formatFileSize(attachedDoc.size)})` : '';
+    return `
+      <div class="attached-doc-card" title="Нажмите, чтобы открыть документ и посмотреть подсветку предложений">
+        <div class="attached-doc-card-row">
+          <div class="attached-doc-card-left">
+            <span class="doc-ext-badge ${extInfo.cls}">${escapeHtml(extInfo.label)}</span>
+            <span class="attached-doc-card-name">${escapeHtml(attachedDoc.name)}${escapeHtml(sizeStr)}</span>
+          </div>
+          <span class="attached-doc-card-hint">Откройте для просмотра</span>
+        </div>
+        <div class="attached-doc-trace-snippet"></div>
+      </div>
+    `;
+  }
+
+  function renderUserBubbleContent(rawContent, explicitAttachedDoc, traceability) {
+    const { cleanPrompt, attachedDoc } = parseUserMessageAttachment(rawContent, explicitAttachedDoc);
+    const promptHtml = highlightQuotesInUserText(cleanPrompt, traceability);
+    const cardHtml = renderAttachedDocCardHtml(attachedDoc);
+    return promptHtml + cardHtml;
+  }
+
+  function openDocViewerModal(docObj, highlightElementId = null) {
+    if (!docViewerModal || !docObj) return;
+    currentOpenDoc = docObj;
+    const extInfo = getDocExtClass(docObj.name);
+    if (docViewerExtBadge) {
+      docViewerExtBadge.textContent = extInfo.label;
+      docViewerExtBadge.className = `doc-viewer-ext-badge ${extInfo.cls}`;
+    }
+    if (docViewerFilename) {
+      docViewerFilename.textContent = docObj.name || 'Документ';
+    }
+    if (docViewerBody) {
+      const contentToRender = docObj.content || 'Текст документа загружается или пуст.';
+      docViewerBody.innerHTML = highlightQuotesInUserText(contentToRender, currentTraceability);
+    }
+    docViewerModal.style.display = 'flex';
+    docViewerModal.classList.add('open');
+    refreshIcons();
+
+    const targetElId = highlightElementId || activeTraceElementId;
+    if (targetElId && docViewerBody) {
+      const quotes = docViewerBody.querySelectorAll(`.trace-quote[data-element-id="${targetElId}"]`);
+      if (quotes.length > 0) {
+        const q = quotes[0];
+        q.classList.add('active');
+        setTimeout(() => {
+          q.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 60);
+      }
+    }
+  }
+
+  function closeDocViewerModal() {
+    if (!docViewerModal) return;
+    docViewerModal.classList.remove('open');
+    docViewerModal.style.display = 'none';
+    currentOpenDoc = null;
+  }
+
+  if (docViewerClose) {
+    docViewerClose.addEventListener('click', closeDocViewerModal);
+  }
+
+  if (docViewerBody) {
+    docViewerBody.addEventListener('click', (e) => {
+      const quote = e.target.closest('.trace-quote');
+      if (quote) {
+        const elId = quote.dataset.elementId;
+        if (elId) {
+          activeTraceElementId = elId;
+          selectElementOnCanvas(elId, true);
+          highlightTraceInEditor(elId);
+          highlightTraceInChat(elId);
+        }
+      }
+    });
+  }
+
+  // ── Traceability & Cross-Synchronization (Diagram <-> Code <-> Chat & Docs) ──
+  function cleanSourceSentences(sourceText) {
+    if (!sourceText) return [];
+    const cleanedLines = sourceText
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => l && l !== '---' && !l.startsWith('```') && !l.startsWith('📎'));
+
+    const sentences = [];
+    cleanedLines.forEach(line => {
+      const parts = line.split(/[.!?]+/).map(p => p.trim()).filter(p => p.length > 3);
+      parts.forEach(sp => {
+        const cleanSp = sp
+          .replace(/^(?:[#>*\-+•]+|\d+[.)])\s*/, '')
+          .replace(/\*\*/g, '')
+          .replace(/__/g, '')
+          .replace(/`/g, '')
+          .trim();
+        if (cleanSp.length > 3 && !cleanSp.startsWith('Построй процесс на основе')) {
+          sentences.push(cleanSp);
+        }
+      });
+    });
+    return sentences;
+  }
+
   function extractLocalTraceability(dslText, promptText) {
     if (!dslText) return [];
     const lines = dslText.split('\n');
@@ -1463,19 +1633,26 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    const sentences = (promptText || lastUserPromptText || '')
-      .split(/[\r\n]+|[.!?]+/)
-      .map(s => s.trim())
-      .filter(s => s.length > 3);
+    const sentences = cleanSourceSentences(promptText || lastUserPromptText || '');
 
     nodes.forEach(node => {
       if (sentences.length > 0) {
-        const words = (node.label.match(/[a-zA-Zа-яА-ЯёЁ0-9]{3,}/g) || []).map(w => w.toLowerCase());
+        const rawWords = (node.label.match(/[a-zA-Zа-яА-ЯёЁ0-9]{3,}/g) || []).map(w => w.toLowerCase());
+        const stems = rawWords.map(w => {
+          if (w.length >= 6) return { full: w, stem: w.slice(0, w.length - 2) };
+          if (w.length >= 5) return { full: w, stem: w.slice(0, w.length - 1) };
+          return { full: w, stem: w };
+        });
+
         let bestScore = 0;
         let bestSentence = '';
         sentences.forEach(sent => {
           const sentLower = sent.toLowerCase();
-          const score = words.filter(w => sentLower.includes(w)).length;
+          let score = 0;
+          stems.forEach(({ full, stem }) => {
+            if (sentLower.includes(full)) score += 1.5;
+            else if (sentLower.includes(stem)) score += 1.0;
+          });
           if (score > bestScore) {
             bestScore = score;
             bestSentence = sent;
@@ -1498,6 +1675,12 @@ document.addEventListener('DOMContentLoaded', () => {
       currentTraceability = extractLocalTraceability(code, lastUserPromptText);
     }
     refreshChatTraceQuotes();
+    if (currentOpenDoc && docViewerModal && docViewerModal.classList.contains('open') && docViewerBody) {
+      docViewerBody.innerHTML = highlightQuotesInUserText(currentOpenDoc.content || '', currentTraceability);
+      if (activeTraceElementId) {
+        highlightTraceInChat(activeTraceElementId);
+      }
+    }
   }
 
   function highlightQuotesInUserText(text, traceability) {
@@ -1524,10 +1707,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const userBubbles = chatContainer.querySelectorAll('.chat-bubble.user');
     userBubbles.forEach(b => {
       const raw = b.dataset.rawContent;
-      if (raw) {
+      if (raw || b._attachedDoc) {
         const body = b.querySelector('.chat-bubble-body');
         if (body) {
-          body.innerHTML = highlightQuotesInUserText(raw, currentTraceability);
+          body.innerHTML = renderUserBubbleContent(raw, b._attachedDoc, currentTraceability);
         }
       }
     });
@@ -1631,15 +1814,66 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function highlightTraceInChat(elementId) {
-    if (!chatContainer) return;
-    chatContainer.querySelectorAll('.trace-quote.active').forEach(el => el.classList.remove('active'));
+    if (chatContainer) {
+      chatContainer.querySelectorAll('.trace-quote.active').forEach(el => el.classList.remove('active'));
+      chatContainer.querySelectorAll('.attached-doc-card').forEach(card => {
+        card.classList.remove('has-active-trace');
+        const hintEl = card.querySelector('.attached-doc-card-hint');
+        if (hintEl) hintEl.textContent = 'Откройте для просмотра';
+        const snippetEl = card.querySelector('.attached-doc-trace-snippet');
+        if (snippetEl) snippetEl.textContent = '';
+      });
+    }
+    if (docViewerBody) {
+      docViewerBody.querySelectorAll('.trace-quote.active').forEach(el => el.classList.remove('active'));
+    }
+
     if (!elementId) return;
 
-    const targetQuotes = chatContainer.querySelectorAll(`.trace-quote[data-element-id="${elementId}"]`);
-    if (targetQuotes.length > 0) {
-      const lastQuote = targetQuotes[targetQuotes.length - 1];
-      lastQuote.classList.add('active');
-      lastQuote.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // 1. Highlight matching quote in user chat messages
+    if (chatContainer) {
+      const targetQuotes = chatContainer.querySelectorAll(`.trace-quote[data-element-id="${elementId}"]`);
+      if (targetQuotes.length > 0) {
+        const lastQuote = targetQuotes[targetQuotes.length - 1];
+        lastQuote.classList.add('active');
+        lastQuote.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+
+      // 2. Check if the traced quote is inside an attached document (.md, .docx, .pdf, .txt)
+      const traceEntry = (currentTraceability || []).find(t => t.id === elementId);
+      const quoteStr = traceEntry && traceEntry.quote ? traceEntry.quote.trim() : '';
+
+      const userBubbles = chatContainer.querySelectorAll('.chat-bubble.user');
+      userBubbles.forEach(bubble => {
+        const { attachedDoc } = parseUserMessageAttachment(bubble.dataset.rawContent, bubble._attachedDoc);
+        if (!attachedDoc || !attachedDoc.content || !quoteStr) return;
+
+        if (attachedDoc.content.toLowerCase().includes(quoteStr.toLowerCase())) {
+          const card = bubble.querySelector('.attached-doc-card');
+          if (card) {
+            card.classList.add('has-active-trace');
+            const hintEl = card.querySelector('.attached-doc-card-hint');
+            if (hintEl) {
+              hintEl.textContent = '⚡ Фраза в файле — откройте для просмотра';
+            }
+            const snippetEl = card.querySelector('.attached-doc-trace-snippet');
+            if (snippetEl) {
+              snippetEl.textContent = `«${quoteStr}» — нажмите, чтобы открыть в документе`;
+            }
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      });
+    }
+
+    // 3. Highlight and scroll inside compact Document Viewer Modal if open
+    if (docViewerModal && docViewerModal.classList.contains('open') && docViewerBody) {
+      const modalQuotes = docViewerBody.querySelectorAll(`.trace-quote[data-element-id="${elementId}"]`);
+      if (modalQuotes.length > 0) {
+        const mq = modalQuotes[0];
+        mq.classList.add('active');
+        mq.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
     }
   }
 
@@ -1827,11 +2061,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (msg.role === 'user') {
       bubble.dataset.rawContent = msg.content || '';
+      if (msg.attached_doc) {
+        bubble._attachedDoc = msg.attached_doc;
+      } else {
+        const parsed = parseUserMessageAttachment(msg.content, null);
+        if (parsed.attachedDoc) {
+          bubble._attachedDoc = parsed.attachedDoc;
+        }
+      }
       if (msg.content) lastUserPromptText = msg.content;
     }
 
     const formattedContent = (!msg.is_error)
-      ? (msg.role === 'user' ? highlightQuotesInUserText(msg.content, currentTraceability) : renderMarkdown(msg.content))
+      ? (msg.role === 'user' ? renderUserBubbleContent(msg.content, bubble._attachedDoc, currentTraceability) : renderMarkdown(msg.content))
       : `<p>${escapeHtml(msg.content).replace(/\n/g, '<br/>')}</p>`;
 
     bubble.innerHTML = `
@@ -1888,7 +2130,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (chatContainer) {
     chatContainer.addEventListener('click', (e) => {
-      // 1. Click on trace quote in user chat message
+      // 1. Click on attached document card in user chat bubble -> open compact document modal
+      const docCard = e.target.closest('.attached-doc-card');
+      if (docCard) {
+        const bubble = docCard.closest('.chat-bubble.user');
+        if (bubble) {
+          const { attachedDoc } = parseUserMessageAttachment(bubble.dataset.rawContent, bubble._attachedDoc);
+          if (attachedDoc) {
+            openDocViewerModal(attachedDoc, activeTraceElementId);
+          }
+        }
+        return;
+      }
+
+      // 2. Click on trace quote in user chat message
       const quote = e.target.closest('.trace-quote');
       if (quote) {
         const elId = quote.dataset.elementId;
@@ -1901,7 +2156,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // 2. Click on proactive question quick-reply chip
+      // 3. Click on proactive question quick-reply chip
       const chip = e.target.closest('.proactive-chip');
       if (chip) {
         const answer = chip.dataset.answer || chip.textContent.trim();
@@ -3808,6 +4063,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Close modals on Escape key
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (docViewerModal && docViewerModal.classList.contains('open')) {
+        closeDocViewerModal();
+      }
       if (profileModal && profileModal.classList.contains('open')) {
         closeProfileModal();
       }
@@ -3871,6 +4129,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.INITIAL_DATA && window.INITIAL_DATA.messages && window.INITIAL_DATA.messages.length > 0) {
       if (chatContainer) chatContainer.innerHTML = '';
       window.INITIAL_DATA.messages.forEach(appendChatMessage);
+      updateTraceability();
     }
     if (codeEditor && codeEditor.value && codeEditor.value.trim()) {
       updateLineNumbers();

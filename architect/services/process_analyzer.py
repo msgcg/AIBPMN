@@ -288,9 +288,36 @@ def generate_proactive_questions(structure: dict[str, Any], source_text: str = '
     return questions[:2]
 
 
+def _clean_source_sentences(source_text: str) -> list[str]:
+    """
+    Splits source text (including attached MD/DOCX/PDF text) into clean sentences,
+    filtering out structural wrappers and stripping markdown list/heading markers.
+    """
+    if not source_text:
+        return []
+    cleaned_lines = []
+    for line in source_text.splitlines():
+        s = line.strip()
+        if not s or s == '---' or s.startswith('```') or s.startswith('📎'):
+            continue
+        cleaned_lines.append(s)
+
+    joined = '\n'.join(cleaned_lines)
+    raw_parts = re.split(r'[\r\n]+', joined)
+    sentences = []
+    for part in raw_parts:
+        sub_parts = [p.strip() for p in re.split(r'[.!?]+', part) if len(p.strip()) > 3]
+        for sp in sub_parts:
+            clean_sp = re.sub(r'^(?:[#>*\-+•]+|\d+[.)])\s*', '', sp).strip()
+            clean_sp = clean_sp.replace('**', '').replace('__', '').replace('`', '').strip()
+            if len(clean_sp) > 3 and not clean_sp.startswith('Построй процесс на основе прикрепленного документа'):
+                sentences.append(clean_sp)
+    return sentences
+
+
 def extract_traceability(dsl_code: str, source_text: str, trace_hints: list[dict] = None) -> list[dict[str, Any]]:
     """
-    Builds traceability mapping between diagram elements, DSL lines, and source prompt sentences.
+    Builds traceability mapping between diagram elements, DSL lines, and source prompt/document sentences.
     """
     structure = parse_dsl_structure(dsl_code)
     nodes = structure['nodes']
@@ -301,9 +328,7 @@ def extract_traceability(dsl_code: str, source_text: str, trace_hints: list[dict
             if isinstance(h, dict) and 'id' in h:
                 hints_map[h['id']] = h.get('quote') or h.get('text') or ''
 
-    # Clean sentences from source text
-    raw_sentences = re.split(r'[\r\n]+|[.!?]+', source_text) if source_text else []
-    sentences = [s.strip() for s in raw_sentences if len(s.strip()) > 3]
+    sentences = _clean_source_sentences(source_text)
 
     mappings = []
 
@@ -313,13 +338,27 @@ def extract_traceability(dsl_code: str, source_text: str, trace_hints: list[dict
         quote = hints_map.get(nid, '')
 
         if not quote and sentences:
-            # Word overlap heuristic
-            words = [w.lower() for w in re.findall(r'[a-zA-Zа-яА-ЯёЁ0-9]{3,}', label)]
-            best_score = 0
+            # Word & Russian-stem overlap heuristic
+            raw_words = [w.lower() for w in re.findall(r'[a-zA-Zа-яА-ЯёЁ0-9]{3,}', label)]
+            stems = []
+            for w in raw_words:
+                if len(w) >= 6:
+                    stems.append((w, w[:len(w) - 2]))
+                elif len(w) >= 5:
+                    stems.append((w, w[:len(w) - 1]))
+                else:
+                    stems.append((w, w))
+
+            best_score = 0.0
             best_sentence = ""
             for sent in sentences:
                 sent_lower = sent.lower()
-                score = sum(1 for w in words if w in sent_lower)
+                score = 0.0
+                for full_w, stem_w in stems:
+                    if full_w in sent_lower:
+                        score += 1.5
+                    elif stem_w in sent_lower:
+                        score += 1.0
                 if score > best_score:
                     best_score = score
                     best_sentence = sent
@@ -341,3 +380,4 @@ def extract_traceability(dsl_code: str, source_text: str, trace_hints: list[dict
         })
 
     return mappings
+

@@ -489,6 +489,60 @@ class ArchitectViewsTests(TestCase):
         self.assertIn('process "XmlSync"', self.diagram.dsl_code)
         self.assertIn('task: t "Действие" user', self.diagram.dsl_code)
 
+    def test_attached_doc_returned_and_traceability_extracted(self):
+        from unittest.mock import patch
+        from architect.services.process_analyzer import extract_traceability
+        from architect.views import merge_prompt_with_md
+
+        doc_text = (
+            "# Регламент закупки\n"
+            "1. Менеджер проверяет остатки товара на складе.\n"
+            "2. Бухгалтер оплачивает счет поставщика."
+        )
+        merged = merge_prompt_with_md("Построй схему по регламенту", "reglament.md", doc_text)
+        dsl = (
+            'process "Закупка"\n'
+            'start: s "Старт"\n'
+            'task: check_stock "Проверка остатков товара"\n'
+            'task: pay_invoice "Оплата счета поставщика"\n'
+            'end: e "Завершено"\n'
+            's -> check_stock -> pay_invoice -> e'
+        )
+        trace = extract_traceability(dsl, merged)
+        trace_by_id = {item['id']: item for item in trace}
+        self.assertIn('check_stock', trace_by_id)
+        self.assertEqual(
+            trace_by_id['check_stock']['quote'],
+            "Менеджер проверяет остатки товара на складе"
+        )
+        self.assertEqual(
+            trace_by_id['pay_invoice']['quote'],
+            "Бухгалтер оплачивает счет поставщика"
+        )
+
+        uploaded_file = SimpleUploadedFile("reglament.md", doc_text.encode('utf-8'), content_type="text/markdown")
+        with patch('architect.services.gigachat_client.GigaChatService.generate_diagram') as mock_gen:
+            mock_gen.return_value = {
+                'success': True,
+                'has_dsl': True,
+                'dsl_code': dsl,
+                'explanation': 'Готово',
+                'bpmn_xml': '<xml></xml>',
+                'traceability': trace,
+                'attempts': 1
+            }
+            resp = self.client.post('/api/generate/', {
+                'project_id': self.project.id,
+                'prompt': 'Построй схему по регламенту',
+                'attached_file': uploaded_file
+            })
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertIsNotNone(data.get('attached_doc'))
+            self.assertEqual(data['attached_doc']['name'], 'reglament.md')
+            self.assertIn('Менеджер проверяет остатки товара на складе', data['attached_doc']['content'])
+
+
 
 
 
