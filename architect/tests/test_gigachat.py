@@ -57,7 +57,7 @@ end: e "Конец"
 s -> e
 ```"""
         with patch.object(GigaChatService, '_call_completions', side_effect=[first_resp, second_resp]):
-            result = GigaChatService.generate_diagram("Тестовый запрос", max_retries=2)
+            result = GigaChatService.generate_diagram("Тестовый запрос", max_retries=2, auth_key="dGVzdF9rZXk=")
             self.assertTrue(result['success'])
             self.assertEqual(result['attempts'], 2)
             # The explanation MUST be the initial architectural text, not the retry's "Исправил синтаксис..."
@@ -65,9 +65,17 @@ s -> e
             self.assertNotIn("Исправил синтаксис", result['explanation'])
 
     def test_status_check(self):
-        status = GigaChatService.check_status()
-        self.assertTrue(status.get('ok'), f"GigaChat status check failed: {status.get('error')}")
-        self.assertEqual(status.get('model'), 'GigaChat-3-Ultra')
+        from unittest.mock import patch
+        # Without key -> key_required=True
+        status_no_key = GigaChatService.check_status()
+        self.assertFalse(status_no_key.get('ok'))
+        self.assertTrue(status_no_key.get('key_required'))
+
+        # With valid key -> ok=True
+        with patch.object(GigaChatService, 'get_token', return_value='mock-oauth-token'):
+            status_ok = GigaChatService.check_status(auth_key='dGVzdF9rZXk=')
+            self.assertTrue(status_ok.get('ok'))
+            self.assertEqual(status_ok.get('model'), 'GigaChat-3-Ultra')
 
     def test_logical_gap_detection_and_warning(self):
         from unittest.mock import patch
@@ -84,10 +92,15 @@ t2 -> e
 ```
 В описании нарушена логика."""
         with patch.object(GigaChatService, '_call_completions', return_value=mock_response):
-            result = GigaChatService.generate_diagram("Пользователь подает заявку, а потом внезапно выплата", max_retries=1)
+            result = GigaChatService.generate_diagram(
+                "Пользователь подает заявку, а потом внезапно выплата",
+                max_retries=1,
+                auth_key="dGVzdF9rZXk="
+            )
             self.assertTrue(result['success'])
             self.assertIn("⚠️ **Обнаружен логический разрыв:**", result['explanation'])
             self.assertIn("Связь намеренно не построена", result['explanation'])
             self.assertIn("разрыв", result['validation_report'])
             self.assertTrue(any("связывает" in q or "инициирует" in q for q in result['proactive_questions']))
+
 

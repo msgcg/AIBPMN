@@ -80,10 +80,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 KNOWLEDGE_BASE_DIR = BASE_DIR / 'knowledge_base'
 MAX_KB_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 
-# GigaChat settings
-GIGACHAT_AUTH_KEY = os.getenv('GIGACHAT_AUTH_KEY', '')
-GIGACHAT_SCOPE = os.getenv('GIGACHAT_SCOPE', 'GIGACHAT_API_PERS')
-GIGACHAT_CLIENT_ID = os.getenv('GIGACHAT_CLIENT_ID', '')
-GIGACHAT_CLIENT_SECRET = os.getenv('GIGACHAT_CLIENT_SECRET', '')
-GIGACHAT_MODEL = os.getenv('GIGACHAT_MODEL', 'GigaChat-3-Ultra')
+# GigaChat default model and scope (credentials are provided interactively via UI: DB for users, cookies for guests)
+GIGACHAT_DEFAULT_SCOPE = 'GIGACHAT_API_PERS'
+GIGACHAT_MODEL = 'GigaChat-3-Ultra'
+
 

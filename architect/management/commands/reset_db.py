@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.contrib.admin.models import LogEntry
 from django.contrib.sessions.models import Session
-from architect.models import Project, Diagram, ChatMessage, KnowledgeBaseFile
+from architect.models import Project, Diagram, ChatMessage, KnowledgeBaseFile, UserGigaChatCredential
 from architect.backends import ensure_default_admin, DEFAULT_ADMIN_USERNAME
 
 
@@ -12,11 +12,12 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         UserModel = get_user_model()
 
-        # Удаляем все проекты, диаграммы, сообщения, файлы БЗ, сессии и логи админки
+        # Удаляем все проекты, диаграммы, сообщения, файлы БЗ, ключи ИИ, сессии и логи админки
         ChatMessage.objects.all().delete()
         Diagram.objects.all().delete()
         Project.objects.all().delete()
         KnowledgeBaseFile.objects.all().delete()
+        UserGigaChatCredential.objects.all().delete()
         Session.objects.all().delete()
         LogEntry.objects.all().delete()
 

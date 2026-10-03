@@ -152,3 +152,32 @@ class ChatMessage(models.Model):
             'is_error': self.is_error,
             'created_at': self.created_at.strftime('%H:%M:%S'),
         }
+
+
+class UserGigaChatCredential(models.Model):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='gigachat_credential',
+        verbose_name='Пользователь'
+    )
+    auth_key = models.TextField('Авторизационный ключ GigaChat (Base64)', blank=True, default='')
+    scope = models.CharField('Scope API', max_length=64, default='GIGACHAT_API_PERS')
+    updated_at = models.DateTimeField('Дата обновления', auto_now=True)
+
+    class Meta:
+        verbose_name = 'Ключ GigaChat пользователя'
+        verbose_name_plural = 'Ключи GigaChat пользователей'
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"GigaChat Key [{self.user.username}]"
+
+    def masked_key(self) -> str:
+        val = (self.auth_key or '').strip()
+        if not val:
+            return ''
+        if len(val) <= 12:
+            return '*' * len(val)
+        return f"{val[:6]}...{val[-4:]}"
+

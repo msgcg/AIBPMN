@@ -247,12 +247,33 @@ document.addEventListener('DOMContentLoaded', () => {
   const importDslInput = document.getElementById('import-dsl-input');
 
   const isAuth = Boolean(window.INITIAL_DATA && window.INITIAL_DATA.isAuthenticated);
+  let hasGigaChatKey = Boolean(window.INITIAL_DATA && window.INITIAL_DATA.hasGigaChatKey);
+  let pendingAiAction = null;
+
   const openAuthBtn = document.getElementById('open-auth-btn');
   const mobileAuthBtn = document.getElementById('mobile-auth-btn');
   const logoutBtn = document.getElementById('logout-btn');
   const mobileLogoutBtn = document.getElementById('mobile-logout-btn');
   const authModal = document.getElementById('auth-modal');
   const authModalClose = document.getElementById('auth-modal-close');
+
+  const gigachatKeyModal = document.getElementById('gigachat-key-modal');
+  const gigachatKeyModalClose = document.getElementById('gigachat-key-modal-close');
+  const gigachatKeyCancelBtn = document.getElementById('gigachat-key-cancel-btn');
+  const gigachatKeyForm = document.getElementById('gigachat-key-form');
+  const gigachatAuthKeyInput = document.getElementById('gigachat-auth-key-input');
+  const gigachatScopeSelect = document.getElementById('gigachat-scope-select');
+  const gigachatKeyErrorMsg = document.getElementById('gigachat-key-error-msg');
+  const gigachatKeySubmitBtn = document.getElementById('gigachat-key-submit-btn');
+  const gigachatKeySubmitText = document.getElementById('gigachat-key-submit-text');
+  const gigachatKeyReason = document.getElementById('gigachat-key-reason');
+  const gigachatKeyReasonText = document.getElementById('gigachat-key-reason-text');
+  const gigachatCurrentKeyBox = document.getElementById('gigachat-current-key-box');
+  const gigachatMaskedKeyVal = document.getElementById('gigachat-masked-key-val');
+  const gigachatKeyDeleteBtn = document.getElementById('gigachat-key-delete-btn');
+  const mobileGigaChatKeyBtn = document.getElementById('mobile-gigachat-key-btn');
+  const mobileStatusDot = document.getElementById('mobile-status-dot');
+  const mobileStatusText = document.getElementById('mobile-status-text');
 
   const errorBar = document.getElementById('code-error-bar');
   const syncPill = document.getElementById('sync-pill');
@@ -1171,6 +1192,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      if (!hasGigaChatKey) {
+        openGigaChatKeyModal({
+          reason: 'Для работы с ИИ-архитектором укажите ваш авторизационный ключ Sber GigaChat API.',
+          onSuccess: () => {
+            if (generateBtn) generateBtn.click();
+          }
+        });
+        return;
+      }
+
       // 1. Immediately flush pending changes according to last source of edit
       let currentDsl = codeEditor ? codeEditor.value.trim() : '';
       if (lastSourceOfChange === 'visual' && modeler) {
@@ -1285,6 +1316,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (!res.success) {
+          if (res.gigachat_key_required) {
+            hasGigaChatKey = false;
+            if (userBubble && !res.user_message) {
+              userBubble.remove();
+            }
+            if (promptInput && prompt) promptInput.value = prompt;
+            if (currentAttachedFile) setAttachedMdFile(currentAttachedFile);
+            updateStatusBadge('err', 'Ключ GigaChat');
+            openGigaChatKeyModal({
+              reason: res.error || 'Для работы ИИ-архитектора укажите действующий авторизационный ключ Sber GigaChat API.',
+              onSuccess: () => {
+                if (generateBtn) generateBtn.click();
+              }
+            });
+            return;
+          }
           const assistantMsg = res.assistant_message || {
             role: 'assistant',
             content: 'Ошибка: ' + (res.error || 'Неизвестная ошибка'),
@@ -4069,6 +4116,176 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ── Sber GigaChat API Credentials Modal ─────────────────────────────────
+  function openGigaChatKeyModal(options = {}) {
+    if (!gigachatKeyModal) return;
+    const { reason = '', onSuccess = null } = options;
+    pendingAiAction = typeof onSuccess === 'function' ? onSuccess : null;
+
+    if (gigachatKeyReason && gigachatKeyReasonText) {
+      if (reason) {
+        gigachatKeyReasonText.textContent = reason;
+        gigachatKeyReason.style.display = 'flex';
+      } else {
+        gigachatKeyReason.style.display = 'none';
+      }
+    }
+
+    if (gigachatKeyErrorMsg) {
+      gigachatKeyErrorMsg.style.display = 'none';
+      gigachatKeyErrorMsg.textContent = '';
+    }
+
+    gigachatKeyModal.classList.add('open');
+    refreshIcons();
+    if (gigachatAuthKeyInput && typeof gigachatAuthKeyInput.focus === 'function') {
+      setTimeout(() => gigachatAuthKeyInput.focus(), 60);
+    }
+  }
+
+  function closeGigaChatKeyModal(clearPending = true) {
+    if (!gigachatKeyModal) return;
+    gigachatKeyModal.classList.remove('open');
+    if (gigachatKeyErrorMsg) {
+      gigachatKeyErrorMsg.style.display = 'none';
+      gigachatKeyErrorMsg.textContent = '';
+    }
+    if (clearPending) {
+      pendingAiAction = null;
+    }
+  }
+
+  if (statusBadge) {
+    statusBadge.addEventListener('click', () => openGigaChatKeyModal());
+    statusBadge.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openGigaChatKeyModal();
+      }
+    });
+  }
+
+  if (mobileGigaChatKeyBtn) {
+    mobileGigaChatKeyBtn.addEventListener('click', () => {
+      if (mobileMoreMenu) mobileMoreMenu.classList.remove('open');
+      openGigaChatKeyModal();
+    });
+  }
+
+  if (gigachatKeyModalClose) {
+    gigachatKeyModalClose.addEventListener('click', () => closeGigaChatKeyModal(true));
+  }
+
+  if (gigachatKeyCancelBtn) {
+    gigachatKeyCancelBtn.addEventListener('click', () => closeGigaChatKeyModal(true));
+  }
+
+  if (gigachatKeyModal) {
+    gigachatKeyModal.addEventListener('click', (e) => {
+      if (e.target === gigachatKeyModal) closeGigaChatKeyModal(true);
+    });
+  }
+
+  if (gigachatKeyForm) {
+    gigachatKeyForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (gigachatKeyErrorMsg) {
+        gigachatKeyErrorMsg.style.display = 'none';
+        gigachatKeyErrorMsg.textContent = '';
+      }
+
+      const authKey = (gigachatAuthKeyInput ? gigachatAuthKeyInput.value : '').trim();
+      const scope = gigachatScopeSelect ? gigachatScopeSelect.value : 'GIGACHAT_API_PERS';
+
+      if (!authKey) {
+        if (gigachatKeyErrorMsg) {
+          gigachatKeyErrorMsg.textContent = 'Пожалуйста, укажите Authorization Key (Base64).';
+          gigachatKeyErrorMsg.style.display = 'block';
+        }
+        return;
+      }
+
+      if (gigachatKeySubmitBtn) gigachatKeySubmitBtn.disabled = true;
+      if (gigachatKeySubmitText) gigachatKeySubmitText.textContent = 'Проверка ключа...';
+
+      try {
+        const resp = await fetch('/api/gigachat/key/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ auth_key: authKey, scope })
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+          hasGigaChatKey = true;
+          if (!isAuth) {
+            const maxAge = 60 * 60 * 24 * 30;
+            document.cookie = `aibpmn_gigachat_key=${encodeURIComponent(authKey)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+            document.cookie = `aibpmn_gigachat_scope=${encodeURIComponent(scope)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+          }
+          if (gigachatAuthKeyInput) gigachatAuthKeyInput.value = '';
+          if (gigachatCurrentKeyBox) gigachatCurrentKeyBox.style.display = 'flex';
+          if (gigachatMaskedKeyVal && data.masked_key) {
+            gigachatMaskedKeyVal.textContent = data.masked_key;
+          }
+
+          const modelName = (data.status_info && data.status_info.model) || 'GigaChat';
+          updateStatusBadge('ok', `${modelName} готов`);
+          if (mobileStatusDot) mobileStatusDot.style.background = 'var(--accent-success)';
+          if (mobileStatusText) mobileStatusText.textContent = `${modelName} (Настроить ключ)`;
+
+          showToast(data.message || 'Ключ GigaChat API успешно сохранен', 'success');
+
+          const actionToRun = pendingAiAction;
+          closeGigaChatKeyModal(true);
+          if (typeof actionToRun === 'function') {
+            setTimeout(() => actionToRun(), 50);
+          }
+        } else {
+          if (gigachatKeyErrorMsg) {
+            gigachatKeyErrorMsg.textContent = data.error || 'Не удалось проверить ключ GigaChat API.';
+            gigachatKeyErrorMsg.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (gigachatKeyErrorMsg) {
+          gigachatKeyErrorMsg.textContent = 'Ошибка соединения при проверке ключа: ' + err.message;
+          gigachatKeyErrorMsg.style.display = 'block';
+        }
+      } finally {
+        if (gigachatKeySubmitBtn) gigachatKeySubmitBtn.disabled = false;
+        if (gigachatKeySubmitText) gigachatKeySubmitText.textContent = 'Проверить и сохранить';
+      }
+    });
+  }
+
+  if (gigachatKeyDeleteBtn) {
+    gigachatKeyDeleteBtn.addEventListener('click', async () => {
+      try {
+        const resp = await fetch('/api/gigachat/key/', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await resp.json();
+        if (data.success) {
+          hasGigaChatKey = false;
+          if (!isAuth) {
+            document.cookie = 'aibpmn_gigachat_key=; path=/; max-age=0; SameSite=Lax';
+            document.cookie = 'aibpmn_gigachat_scope=; path=/; max-age=0; SameSite=Lax';
+          }
+          if (gigachatCurrentKeyBox) gigachatCurrentKeyBox.style.display = 'none';
+          if (gigachatMaskedKeyVal) gigachatMaskedKeyVal.textContent = '';
+          updateStatusBadge('err', 'Ключ GigaChat');
+          if (mobileStatusDot) mobileStatusDot.style.background = 'var(--accent-danger)';
+          if (mobileStatusText) mobileStatusText.textContent = 'Настроить ключ GigaChat';
+          showToast(data.message || 'Ключ GigaChat API удален', 'info');
+        }
+      } catch (err) {
+        showToast('Ошибка удаления ключа: ' + err.message, 'error');
+      }
+    });
+  }
+
   // ── DSL Documentation Modal ─────────────────────────────────────────────
   const dslDocsBtn = document.getElementById('dsl-docs-btn');
   const dslDocsModal = document.getElementById('dsl-docs-modal');
@@ -4167,6 +4384,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Close modals on Escape key
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (gigachatKeyModal && gigachatKeyModal.classList.contains('open')) {
+        closeGigaChatKeyModal(true);
+      }
       if (docViewerModal && docViewerModal.classList.contains('open')) {
         closeDocViewerModal();
       }

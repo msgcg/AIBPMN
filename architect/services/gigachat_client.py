@@ -17,61 +17,114 @@ from .process_analyzer import (
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+class GigaChatAuthError(ValueError):
+    """Raised when GigaChat API authorization key is missing or rejected."""
+    pass
+
+
 class GigaChatService:
+    _tokens: dict[tuple[str, str], tuple[str, int]] = {}
     _token = None
     _token_expires_at = 0
 
     @classmethod
-    def get_token(cls) -> str:
+    def resolve_user_credentials(cls, user=None, auth_key: str = '', scope: str = '') -> tuple[str, str]:
+        default_scope = getattr(settings, 'GIGACHAT_DEFAULT_SCOPE', 'GIGACHAT_API_PERS')
+        resolved_key = (auth_key or '').strip()
+        resolved_scope = (scope or '').strip() or default_scope
+
+        if not resolved_key and user is not None and getattr(user, 'is_authenticated', False):
+            try:
+                cred = getattr(user, 'gigachat_credential', None)
+                if cred and cred.auth_key:
+                    resolved_key = cred.auth_key.strip()
+                    resolved_scope = (cred.scope or default_scope).strip()
+            except Exception:
+                pass
+
+        if resolved_key.lower().startswith('basic '):
+            resolved_key = resolved_key[6:].strip()
+
+        return resolved_key, resolved_scope
+
+    @classmethod
+    def get_token(cls, auth_key: str = '', scope: str = '', user=None) -> str:
+        resolved_key, resolved_scope = cls.resolve_user_credentials(user=user, auth_key=auth_key, scope=scope)
+        if not resolved_key:
+            raise GigaChatAuthError(
+                "Ключ авторизации GigaChat API не настроен. Введите ключ в интерактивном окне настройки ИИ."
+            )
+
         current_time = int(time.time() * 1000)
-        # Refresh if expires in less than 60 seconds
-        if cls._token and cls._token_expires_at - current_time > 60000:
-            return cls._token
-
-        auth_key = getattr(settings, 'GIGACHAT_AUTH_KEY', '')
-        scope = getattr(settings, 'GIGACHAT_SCOPE', 'GIGACHAT_API_PERS')
-
-        if not auth_key:
-            raise ValueError("GIGACHAT_AUTH_KEY не задан в конфигурации или .env файле")
+        cache_key = (resolved_key, resolved_scope)
+        cached = cls._tokens.get(cache_key)
+        if cached and cached[0] and cached[1] - current_time > 60000:
+            return cached[0]
 
         oauth_url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
         headers = {
-            "Authorization": f"Basic {auth_key}",
+            "Authorization": f"Basic {resolved_key}",
             "RqUID": str(uuid.uuid4()),
             "Content-Type": "application/x-www-form-urlencoded"
         }
-        data = {"scope": scope}
+        data = {"scope": resolved_scope}
 
         try:
             resp = requests.post(oauth_url, headers=headers, data=data, verify=False, timeout=12)
+            if resp.status_code in (400, 401, 403):
+                raise GigaChatAuthError(
+                    f"Ключ авторизации GigaChat отклонен сервером Сбера (HTTP {resp.status_code}). Проверьте правильность ключа и выбранный Scope."
+                )
             resp.raise_for_status()
             res_data = resp.json()
-            cls._token = res_data.get("access_token")
-            cls._token_expires_at = res_data.get("expires_at", current_time + 1800000)
-            return cls._token
+            token = res_data.get("access_token")
+            expires_at = res_data.get("expires_at", current_time + 1800000)
+            if token:
+                cls._tokens[cache_key] = (token, expires_at)
+                cls._token = token
+                cls._token_expires_at = expires_at
+            return token
+        except GigaChatAuthError:
+            raise
         except Exception as exc:
-            raise RuntimeError(f"Ошибка получения OAuth-токена GigaChat: {exc}")
+            raise GigaChatAuthError(f"Ошибка получения OAuth-токена GigaChat: {exc}")
 
     @classmethod
-    def check_status(cls) -> dict:
+    def check_status(cls, auth_key: str = '', scope: str = '', user=None) -> dict:
+        model_name = getattr(settings, 'GIGACHAT_MODEL', 'GigaChat-3-Ultra')
+        resolved_key, resolved_scope = cls.resolve_user_credentials(user=user, auth_key=auth_key, scope=scope)
+        if not resolved_key:
+            return {
+                'ok': False,
+                'key_configured': False,
+                'key_required': True,
+                'model': model_name,
+                'scope': resolved_scope,
+                'error': 'Ключ авторизации GigaChat API не задан'
+            }
         try:
-            token = cls.get_token()
-            model_name = getattr(settings, 'GIGACHAT_MODEL', 'GigaChat-3-Ultra')
+            cls.get_token(auth_key=resolved_key, scope=resolved_scope, user=user)
             return {
                 'ok': True,
+                'key_configured': True,
+                'key_required': False,
                 'model': model_name,
+                'scope': resolved_scope,
                 'message': f'Модель {model_name} активна и готова к работе'
             }
         except Exception as exc:
             return {
                 'ok': False,
-                'model': getattr(settings, 'GIGACHAT_MODEL', 'GigaChat-3-Ultra'),
+                'key_configured': True,
+                'key_required': True,
+                'model': model_name,
+                'scope': resolved_scope,
                 'error': str(exc)
             }
 
     @classmethod
-    def _call_completions(cls, messages: list, temperature: float = 0.3) -> str:
-        token = cls.get_token()
+    def _call_completions(cls, messages: list, temperature: float = 0.3, auth_key: str = '', scope: str = '', user=None) -> str:
+        token = cls.get_token(auth_key=auth_key, scope=scope, user=user)
         model_name = getattr(settings, 'GIGACHAT_MODEL', 'GigaChat-3-Ultra')
 
         # Use api.giga.chat for GigaChat-3-Ultra as specified in official docs
@@ -93,6 +146,12 @@ class GigaChatService:
             if resp.status_code == 404:
                 alt_url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
                 resp = requests.post(alt_url, headers=headers, json=payload, verify=False, timeout=60)
+
+        if resp.status_code in (401, 403):
+            # Invalidate cached token if unauthorized
+            resolved_key, resolved_scope = cls.resolve_user_credentials(user=user, auth_key=auth_key, scope=scope)
+            cls._tokens.pop((resolved_key, resolved_scope), None)
+            raise GigaChatAuthError(f"Ошибка авторизации при обращении к модели GigaChat (HTTP {resp.status_code}).")
 
         resp.raise_for_status()
         res_json = resp.json()
@@ -161,7 +220,7 @@ class GigaChatService:
         return None, text.strip()
 
     @classmethod
-    def generate_diagram(cls, prompt: str, history: list = None, max_retries: int = 5, user=None) -> dict:
+    def generate_diagram(cls, prompt: str, history: list = None, max_retries: int = 5, user=None, auth_key: str = '', scope: str = '') -> dict:
         """
         Generates BPMN-as-Code DSL and architectural explanation.
         Includes automatic retry and self-correction loop if DSL fails compilation (up to 5 attempts).
@@ -188,7 +247,7 @@ class GigaChatService:
 
         while attempt < max_retries:
             attempt += 1
-            raw_response = cls._call_completions(messages, temperature=0.3)
+            raw_response = cls._call_completions(messages, temperature=0.3, auth_key=auth_key, scope=scope, user=user)
             trace_hints, clean_raw = cls.extract_trace_hints(raw_response)
             if trace_hints:
                 extracted_hints = trace_hints
@@ -299,7 +358,7 @@ class GigaChatService:
         }
 
     @classmethod
-    def refine_diagram(cls, current_dsl: str, instruction: str, history: list = None, max_retries: int = 5, user=None) -> dict:
+    def refine_diagram(cls, current_dsl: str, instruction: str, history: list = None, max_retries: int = 5, user=None, auth_key: str = '', scope: str = '') -> dict:
         """
         Modifies and refines an existing BPMN diagram DSL based on user's iterative instructions.
         Includes automatic retry loop (up to 5 attempts).
@@ -331,7 +390,7 @@ class GigaChatService:
 
         while attempt < max_retries:
             attempt += 1
-            raw_response = cls._call_completions(messages, temperature=0.25)
+            raw_response = cls._call_completions(messages, temperature=0.25, auth_key=auth_key, scope=scope, user=user)
             trace_hints, clean_raw = cls.extract_trace_hints(raw_response)
             if trace_hints:
                 extracted_hints = trace_hints

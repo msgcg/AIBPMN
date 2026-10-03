@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
-from .models import Project, Diagram, ChatMessage, KnowledgeBaseFile
+from .models import Project, Diagram, ChatMessage, KnowledgeBaseFile, UserGigaChatCredential
 
 # ─── Настройка заголовков панели управления ─────────────────────────────────
 admin.site.site_header = "AIBPMN Architect — Панель управления"
@@ -216,4 +216,20 @@ class KnowledgeBaseFileAdmin(admin.ModelAdmin):
         preview = text[:800] + ('...' if len(text) > 800 else '')
         return format_html('<pre style="max-height: 250px; overflow-y: auto; background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 6px; font-family: monospace;">{}</pre>', preview)
     text_preview.short_description = "Текстовый предпросмотр"
+
+
+@admin.register(UserGigaChatCredential)
+class UserGigaChatCredentialAdmin(admin.ModelAdmin):
+    list_display = ('user', 'scope', 'masked_key_display', 'updated_at')
+    list_filter = ('scope', 'updated_at')
+    search_fields = ('user__username',)
+    readonly_fields = ('updated_at',)
+
+    def masked_key_display(self, obj):
+        masked = obj.masked_key()
+        if not masked:
+            return "Не задан"
+        return format_html('<code>{}</code>', masked)
+    masked_key_display.short_description = "Ключ (маска)"
+
 

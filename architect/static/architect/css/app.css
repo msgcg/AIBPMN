@@ -3940,4 +3940,202 @@ input.app-dialog-input:focus {
   font-size: 0.96rem;
   margin: 10px 0 6px 0;
   color: var(--text-primary);
-}
+}
+
+/* ── GigaChat API Credentials Modal ── */
+#status-badge {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+#status-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.gigachat-reason-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.gigachat-storage-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.gigachat-storage-info div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gigachat-storage-info.storage-db {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--text-secondary);
+}
+
+.gigachat-storage-info.storage-db strong {
+  color: var(--accent-success, #10b981);
+}
+
+.gigachat-storage-info.storage-cookie {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--text-secondary);
+}
+
+.gigachat-storage-info.storage-cookie strong {
+  color: var(--accent-warning, #f59e0b);
+}
+
+.gigachat-current-key-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border-color);
+}
+
+/* ── Collapsible Instruction Guide inside GigaChat Modal ── */
+.gigachat-guide-collapsible {
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-alt, rgba(15, 23, 42, 0.45));
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+
+.gigachat-guide-collapsible[open] {
+  border-color: rgba(99, 102, 241, 0.45);
+}
+
+.gigachat-guide-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: background var(--transition-fast);
+}
+
+.gigachat-guide-summary::-webkit-details-marker {
+  display: none;
+}
+
+.gigachat-guide-summary:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.gigachat-guide-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gigachat-guide-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.73rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.gigachat-guide-hint::after {
+  content: "Инструкция";
+}
+
+.gigachat-guide-collapsible[open] .gigachat-guide-hint::after {
+  content: "Свернуть";
+}
+
+.gigachat-guide-chevron {
+  transition: transform 0.2s ease;
+}
+
+.gigachat-guide-collapsible[open] .gigachat-guide-chevron {
+  transform: rotate(180deg);
+}
+
+.gigachat-guide-body {
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.gigachat-guide-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gigachat-guide-steps li {
+  color: var(--text-primary);
+}
+
+.gigachat-guide-steps a {
+  color: var(--accent-primary);
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.gigachat-guide-steps a:hover {
+  opacity: 0.85;
+}
+
+.gigachat-guide-steps code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  background: rgba(99, 102, 241, 0.14);
+  color: var(--accent-primary);
+}
+
+.gigachat-guide-note {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(99, 102, 241, 0.08);
+  border-left: 3px solid var(--accent-primary);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+

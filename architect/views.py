@@ -2,14 +2,15 @@ import os
 import re
 import json
 import datetime
+import urllib.parse
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.models import User
 from django.http import JsonResponse, HttpResponse, HttpResponseNotFound
 from django.shortcuts import render, get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
-from .models import Project, Diagram, ChatMessage, KnowledgeBaseFile
-from .services.gigachat_client import GigaChatService
+from .models import Project, Diagram, ChatMessage, KnowledgeBaseFile, UserGigaChatCredential
+from .services.gigachat_client import GigaChatService, GigaChatAuthError
 from .services.compiler_service import compile_dsl, decompile_bpmn_xml
 from .services.knowledge_base import (
     list_kb_files,
@@ -27,6 +28,72 @@ from .services.process_analyzer import (
     generate_proactive_questions,
     extract_traceability,
 )
+
+GIGACHAT_COOKIE_KEY = 'aibpmn_gigachat_key'
+GIGACHAT_COOKIE_SCOPE = 'aibpmn_gigachat_scope'
+GIGACHAT_COOKIE_MAX_AGE = 60 * 60 * 24 * 90  # 90 дней
+
+
+def normalize_gigachat_key(raw_key: str) -> str:
+    val = (raw_key or '').strip().strip('"').strip("'")
+    if val.lower().startswith('basic '):
+        val = val[6:].strip()
+    return val
+
+
+def mask_gigachat_key(key: str) -> str:
+    val = (key or '').strip()
+    if not val:
+        return ''
+    if len(val) <= 12:
+        return '*' * len(val)
+    return f"{val[:6]}...{val[-4:]}"
+
+
+def resolve_request_gigachat_credentials(request, data=None) -> tuple[str, str, str]:
+    """
+    Определяет ключ авторизации и Scope для текущего запроса:
+    - Для авторизованного пользователя: берет из БД (UserGigaChatCredential). Если в БД пусто, но есть гостевая cookie, переносит в БД.
+    - Для гостя: берет из cookie браузера (aibpmn_gigachat_key).
+    Возвращает кортеж: (auth_key, scope, storage_mode), где storage_mode in ('db', 'cookie').
+    """
+    user = request.user if getattr(request, 'user', None) and request.user.is_authenticated else None
+    default_scope = getattr(settings, 'GIGACHAT_DEFAULT_SCOPE', 'GIGACHAT_API_PERS')
+
+    explicit_key = normalize_gigachat_key((data or {}).get('gigachat_auth_key', '') or '')
+    explicit_scope = ((data or {}).get('gigachat_scope', '') or '').strip()
+
+    raw_cookie_key = request.COOKIES.get(GIGACHAT_COOKIE_KEY, '') if hasattr(request, 'COOKIES') else ''
+    raw_cookie_scope = request.COOKIES.get(GIGACHAT_COOKIE_SCOPE, '') if hasattr(request, 'COOKIES') else ''
+    cookie_key = normalize_gigachat_key(urllib.parse.unquote(raw_cookie_key or ''))
+    cookie_scope = urllib.parse.unquote(raw_cookie_scope or '').strip() or default_scope
+
+    if user:
+        cred = UserGigaChatCredential.objects.filter(user=user).first()
+        if explicit_key:
+            scope_val = explicit_scope or (cred.scope if cred else default_scope)
+            cred, _ = UserGigaChatCredential.objects.update_or_create(
+                user=user,
+                defaults={'auth_key': explicit_key, 'scope': scope_val}
+            )
+            return cred.auth_key.strip(), cred.scope, 'db'
+
+        if cred and cred.auth_key.strip():
+            return cred.auth_key.strip(), (cred.scope or default_scope), 'db'
+
+        if cookie_key:
+            cred, _ = UserGigaChatCredential.objects.update_or_create(
+                user=user,
+                defaults={'auth_key': cookie_key, 'scope': cookie_scope}
+            )
+            return cred.auth_key.strip(), cred.scope, 'db'
+
+        return '', default_scope, 'db'
+
+    key_val = explicit_key or cookie_key
+    scope_val = explicit_scope or cookie_scope or default_scope
+    return key_val, scope_val, 'cookie'
+
 
 INITIAL_DEMO_DSL = """process "Согласование командировки"
 
@@ -185,12 +252,26 @@ def index_view(request):
             'created_at': '',
             'is_error': False
         }
-        status_info = GigaChatService.check_status()
+        auth_key, scope, storage_mode = resolve_request_gigachat_credentials(request)
+        model_name = getattr(settings, 'GIGACHAT_MODEL', 'GigaChat-3-Ultra')
+        status_info = {
+            'ok': bool(auth_key),
+            'key_configured': bool(auth_key),
+            'key_required': not bool(auth_key),
+            'storage_mode': storage_mode,
+            'scope': scope,
+            'masked_key': mask_gigachat_key(auth_key),
+            'model': model_name,
+            'message': f'Модель {model_name} готова' if auth_key else 'Настройте ключ GigaChat API'
+        }
         context = {
             'current_project': demo_project,
             'current_diagram': demo_diagram,
             'projects': [demo_project],
             'status_info': status_info,
+            'has_gigachat_key': bool(auth_key),
+            'gigachat_scope': scope,
+            'gigachat_masked_key': mask_gigachat_key(auth_key),
             'kb_files': [],
             'user': request.user,
             'initial_messages': [initial_greeting],
@@ -249,7 +330,18 @@ def index_view(request):
         p_dict['diagrams'] = [d.to_dict() for d in p.diagrams.all()]
         projects.append(p_dict)
 
-    status_info = GigaChatService.check_status()
+    auth_key, scope, storage_mode = resolve_request_gigachat_credentials(request)
+    model_name = getattr(settings, 'GIGACHAT_MODEL', 'GigaChat-3-Ultra')
+    status_info = {
+        'ok': bool(auth_key),
+        'key_configured': bool(auth_key),
+        'key_required': not bool(auth_key),
+        'storage_mode': storage_mode,
+        'scope': scope,
+        'masked_key': mask_gigachat_key(auth_key),
+        'model': model_name,
+        'message': f'Модель {model_name} готова' if auth_key else 'Настройте ключ GigaChat API'
+    }
     kb_files = list_kb_files(user=user)
     initial_messages = [m.to_dict() for m in diagram.messages.order_by('created_at')]
 
@@ -258,6 +350,9 @@ def index_view(request):
         'current_diagram': diagram,
         'projects': projects,
         'status_info': status_info,
+        'has_gigachat_key': bool(auth_key),
+        'gigachat_scope': scope,
+        'gigachat_masked_key': mask_gigachat_key(auth_key),
         'kb_files': kb_files,
         'user': request.user,
         'initial_messages': initial_messages,
@@ -265,11 +360,121 @@ def index_view(request):
     return render(request, 'architect/index.html', context)
 
 
-# ─── GigaChat Status API ───────────────────────────────────────────────────
+# ─── GigaChat Status & Interactive Key API ─────────────────────────────────
 
 def api_status(request):
-    status = GigaChatService.check_status()
+    user = request.user if request.user.is_authenticated else None
+    auth_key, scope, storage_mode = resolve_request_gigachat_credentials(request)
+    status = GigaChatService.check_status(auth_key=auth_key, scope=scope, user=user)
+    status['storage_mode'] = storage_mode
+    status['masked_key'] = mask_gigachat_key(auth_key)
     return JsonResponse(status)
+
+
+@csrf_exempt
+def api_gigachat_key(request):
+    """
+    Управление авторизационными данными Сбер GigaChat API:
+    - GET: возвращает статус наличия ключа, маску, scope и режим хранения ('db' для пользователей, 'cookie' для гостей)
+    - POST: сохраняет ключ (в БД для авторизованного пользователя, либо в cookie для гостя)
+    - DELETE: удаляет сохраненный ключ из БД и/или cookie
+    """
+    user = request.user if request.user.is_authenticated else None
+    default_scope = getattr(settings, 'GIGACHAT_DEFAULT_SCOPE', 'GIGACHAT_API_PERS')
+
+    if request.method == 'GET':
+        auth_key, scope, storage_mode = resolve_request_gigachat_credentials(request)
+        return JsonResponse({
+            'success': True,
+            'has_key': bool(auth_key),
+            'masked_key': mask_gigachat_key(auth_key),
+            'scope': scope,
+            'storage': storage_mode,
+            'storage_mode': storage_mode,
+        })
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        except Exception:
+            return JsonResponse({'success': False, 'error': 'Некорректный формат JSON'}, status=400)
+
+        auth_key = normalize_gigachat_key(data.get('auth_key', ''))
+        scope = (data.get('scope') or default_scope).strip()
+        if scope not in ('GIGACHAT_API_PERS', 'GIGACHAT_API_B2B', 'GIGACHAT_API_CORP'):
+            scope = default_scope
+
+        if not auth_key:
+            return JsonResponse({
+                'success': False,
+                'error': 'Введите авторизационный ключ GigaChat (Authorization Key в формате Base64).'
+            }, status=400)
+
+        if data.get('verify'):
+            try:
+                GigaChatService.get_token(auth_key=auth_key, scope=scope, user=user)
+            except GigaChatAuthError as auth_err:
+                return JsonResponse({'success': False, 'error': str(auth_err)}, status=400)
+
+        masked = mask_gigachat_key(auth_key)
+
+        if user:
+            UserGigaChatCredential.objects.update_or_create(
+                user=user,
+                defaults={'auth_key': auth_key, 'scope': scope}
+            )
+            return JsonResponse({
+                'success': True,
+                'has_key': True,
+                'masked_key': masked,
+                'scope': scope,
+                'storage': 'db',
+                'storage_mode': 'db',
+                'message': 'Ключ GigaChat сохранен в вашей учетной записи (базе данных).'
+            })
+        else:
+            resp = JsonResponse({
+                'success': True,
+                'has_key': True,
+                'masked_key': masked,
+                'scope': scope,
+                'storage': 'cookie',
+                'storage_mode': 'cookie',
+                'message': 'Ключ GigaChat сохранен в cookie браузера (гостевой режим).'
+            })
+            resp.set_cookie(
+                GIGACHAT_COOKIE_KEY,
+                urllib.parse.quote(auth_key, safe=''),
+                max_age=GIGACHAT_COOKIE_MAX_AGE,
+                samesite='Lax',
+                path='/'
+            )
+            resp.set_cookie(
+                GIGACHAT_COOKIE_SCOPE,
+                urllib.parse.quote(scope, safe=''),
+                max_age=GIGACHAT_COOKIE_MAX_AGE,
+                samesite='Lax',
+                path='/'
+            )
+            return resp
+
+    elif request.method == 'DELETE':
+        if user:
+            UserGigaChatCredential.objects.filter(user=user).delete()
+        storage_mode = 'db' if user else 'cookie'
+        resp = JsonResponse({
+            'success': True,
+            'has_key': False,
+            'masked_key': '',
+            'scope': default_scope,
+            'storage_mode': storage_mode,
+            'message': 'Ключ авторизации GigaChat удален.'
+        })
+        resp.delete_cookie(GIGACHAT_COOKIE_KEY, path='/')
+        resp.delete_cookie(GIGACHAT_COOKIE_SCOPE, path='/')
+        return resp
+
+    return JsonResponse({'error': 'Метод не поддерживается'}, status=405)
 
 
 # ─── Projects API ─────────────────────────────────────────────────────────
@@ -824,6 +1029,7 @@ def api_generate(request):
             return JsonResponse({'success': False, 'error': 'Описание процесса или прикрепленный файл не могут быть пустыми'}, status=400)
 
         user = request.user if request.user.is_authenticated else None
+        auth_key, scope, storage_mode = resolve_request_gigachat_credentials(request, data)
         current_dsl = data.get('current_dsl', '').strip()
         history = data.get('history', [])
         if isinstance(history, str):
@@ -840,10 +1046,19 @@ def api_generate(request):
                     instruction=prompt,
                     history=history,
                     max_retries=5,
-                    user=None
+                    user=None,
+                    auth_key=auth_key,
+                    scope=scope
                 )
             else:
-                result = GigaChatService.generate_diagram(prompt=prompt, history=history, max_retries=5, user=None)
+                result = GigaChatService.generate_diagram(
+                    prompt=prompt,
+                    history=history,
+                    max_retries=5,
+                    user=None,
+                    auth_key=auth_key,
+                    scope=scope
+                )
 
             has_dsl = result.get('has_dsl', True)
             dsl_code = result.get('dsl_code', '')
@@ -950,10 +1165,19 @@ def api_generate(request):
                 instruction=prompt,
                 history=auth_history,
                 max_retries=5,
-                user=user
+                user=user,
+                auth_key=auth_key,
+                scope=scope
             )
         else:
-            result = GigaChatService.generate_diagram(prompt=prompt, history=auth_history, max_retries=5, user=user)
+            result = GigaChatService.generate_diagram(
+                prompt=prompt,
+                history=auth_history,
+                max_retries=5,
+                user=user,
+                auth_key=auth_key,
+                scope=scope
+            )
 
         has_dsl = result.get('has_dsl', True)
         dsl_code = result.get('dsl_code', '')
@@ -1031,6 +1255,14 @@ def api_generate(request):
             'error': error
         })
 
+    except GigaChatAuthError as auth_err:
+        storage_mode = 'db' if request.user.is_authenticated else 'cookie'
+        return JsonResponse({
+            'success': False,
+            'gigachat_key_required': True,
+            'storage_mode': storage_mode,
+            'error': str(auth_err)
+        }, status=401)
     except Exception as exc:
         return JsonResponse({'success': False, 'error': str(exc)}, status=500)
 
@@ -1071,6 +1303,7 @@ def api_refine(request):
             return JsonResponse({'success': False, 'error': 'Инструкция по доработке или прикрепленный файл не могут быть пустыми'}, status=400)
 
         user = request.user if request.user.is_authenticated else None
+        auth_key, scope, storage_mode = resolve_request_gigachat_credentials(request, data)
 
         if not user or diagram_id == 0:
             # Guest mode refine: in-memory calculation without writing to DB
@@ -1079,7 +1312,9 @@ def api_refine(request):
                 instruction=instruction,
                 history=data.get('history', []),
                 max_retries=5,
-                user=None
+                user=None,
+                auth_key=auth_key,
+                scope=scope
             )
             has_dsl = result.get('has_dsl', True)
             dsl_code = result.get('dsl_code')
@@ -1156,7 +1391,9 @@ def api_refine(request):
             instruction=instruction,
             history=history,
             max_retries=5,
-            user=user
+            user=user,
+            auth_key=auth_key,
+            scope=scope
         )
 
         has_dsl = result.get('has_dsl', True)
@@ -1216,6 +1453,14 @@ def api_refine(request):
             'error': error
         })
 
+    except GigaChatAuthError as auth_err:
+        storage_mode = 'db' if request.user.is_authenticated else 'cookie'
+        return JsonResponse({
+            'success': False,
+            'gigachat_key_required': True,
+            'storage_mode': storage_mode,
+            'error': str(auth_err)
+        }, status=401)
     except Exception as exc:
         return JsonResponse({'success': False, 'error': str(exc)}, status=500)
 
@@ -1385,6 +1630,7 @@ def api_register(request):
         seed_user_knowledge_base(user)
         project, diag = create_default_project_for_user(user=user, project_name="Основной проект")
         login(request, user)
+        resolve_request_gigachat_credentials(request, data)
 
         return JsonResponse({
             'success': True,
@@ -1413,6 +1659,7 @@ def api_login(request):
             return JsonResponse({'success': False, 'error': 'Неверный логин или пароль.'}, status=400)
 
         login(request, user)
+        resolve_request_gigachat_credentials(request, data)
         p = Project.objects.filter(user=user).first()
         d = p.diagrams.first() if p else None
         redirect_url = f"/?project={p.id}&diagram={d.id}" if (p and d) else "/"

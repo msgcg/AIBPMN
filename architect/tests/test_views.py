@@ -2,15 +2,22 @@ import json
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from architect.models import Project, Diagram, ChatMessage
+from architect.models import Project, Diagram, ChatMessage, UserGigaChatCredential
 from architect.services.knowledge_base import delete_kb_file
 
 class ArchitectViewsTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="testuser", password="Password123!")
+        UserGigaChatCredential.objects.create(
+            user=self.user,
+            auth_key="dGVzdF9kYl9hY2NvdW50X2tleQ==",
+            scope="GIGACHAT_API_PERS"
+        )
         self.client = Client()
         self.client.force_login(self.user)
         self.guest_client = Client()
+        self.guest_client.cookies['aibpmn_gigachat_key'] = 'Z3Vlc3RfY29va2llX2tleQ=='
+        self.guest_client.cookies['aibpmn_gigachat_scope'] = 'GIGACHAT_API_PERS'
 
         self.project = Project.objects.create(user=self.user, name="Тестовый проект", description="Описание")
         self.diagram = Diagram.objects.create(
@@ -542,10 +549,89 @@ class ArchitectViewsTests(TestCase):
             self.assertEqual(data['attached_doc']['name'], 'reglament.md')
             self.assertIn('Менеджер проверяет остатки товара на складе', data['attached_doc']['content'])
 
+    def test_api_generate_requires_gigachat_key_when_missing(self):
+        # 1. Guest without cookie
+        empty_guest = Client()
+        resp_g = empty_guest.post(
+            '/api/generate/',
+            data=json.dumps({'prompt': 'Построй процесс'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp_g.status_code, 401)
+        data_g = resp_g.json()
+        self.assertFalse(data_g['success'])
+        self.assertTrue(data_g.get('gigachat_key_required'))
 
+        # 2. Authenticated user without DB credential
+        UserGigaChatCredential.objects.filter(user=self.user).delete()
+        resp_u = self.client.post(
+            '/api/generate/',
+            data=json.dumps({'project_id': self.project.id, 'prompt': 'Построй процесс'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp_u.status_code, 401)
+        data_u = resp_u.json()
+        self.assertFalse(data_u['success'])
+        self.assertTrue(data_u.get('gigachat_key_required'))
 
+    def test_api_gigachat_key_guest_saves_to_cookies(self):
+        import urllib.parse
+        from unittest.mock import patch
+        guest = Client()
+        with patch('architect.services.gigachat_client.GigaChatService.get_token', return_value='valid-token'):
+            resp = guest.post(
+                '/api/gigachat/key/',
+                data=json.dumps({'auth_key': 'Z3Vlc3RfYmFzZTY0X2tleQ==', 'scope': 'GIGACHAT_API_PERS'}),
+                content_type='application/json'
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertTrue(data['success'])
+            self.assertEqual(data['storage'], 'cookie')
+            self.assertIn('aibpmn_gigachat_key', resp.cookies)
+            self.assertEqual(
+                urllib.parse.unquote(resp.cookies['aibpmn_gigachat_key'].value),
+                'Z3Vlc3RfYmFzZTY0X2tleQ=='
+            )
+            get_resp = guest.get('/api/gigachat/key/')
+            self.assertEqual(get_resp.status_code, 200)
+            self.assertTrue(get_resp.json()['has_key'])
 
+    def test_api_gigachat_key_authenticated_saves_to_db(self):
+        from unittest.mock import patch
+        UserGigaChatCredential.objects.filter(user=self.user).delete()
+        with patch('architect.services.gigachat_client.GigaChatService.get_token', return_value='valid-token'):
+            resp = self.client.post(
+                '/api/gigachat/key/',
+                data=json.dumps({'auth_key': 'ZGJfYmFzZTY0X2tleV8xMjM0', 'scope': 'GIGACHAT_API_CORP'}),
+                content_type='application/json'
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertTrue(data['success'])
+            self.assertEqual(data['storage'], 'db')
+            cred = UserGigaChatCredential.objects.get(user=self.user)
+            self.assertEqual(cred.auth_key, 'ZGJfYmFzZTY0X2tleV8xMjM0')
+            self.assertEqual(cred.scope, 'GIGACHAT_API_CORP')
 
+        # Delete key from DB
+        del_resp = self.client.delete('/api/gigachat/key/')
+        self.assertEqual(del_resp.status_code, 200)
+        self.assertFalse(UserGigaChatCredential.objects.filter(user=self.user).exists())
 
+    def test_guest_cookie_key_migrates_to_db_on_login(self):
+        UserGigaChatCredential.objects.filter(user=self.user).delete()
+        guest = Client()
+        guest.cookies['aibpmn_gigachat_key'] = 'bWlncmF0ZWRfY29va2llX2tleQ=='
+        guest.cookies['aibpmn_gigachat_scope'] = 'GIGACHAT_API_B2B'
 
-
+        resp = guest.post(
+            '/api/auth/login/',
+            data=json.dumps({'username': 'testuser', 'password': 'Password123!'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get('success'))
+        cred = UserGigaChatCredential.objects.get(user=self.user)
+        self.assertEqual(cred.auth_key, 'bWlncmF0ZWRfY29va2llX2tleQ==')
+        self.assertEqual(cred.scope, 'GIGACHAT_API_B2B')

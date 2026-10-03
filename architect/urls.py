@@ -5,8 +5,9 @@ urlpatterns = [
     # Main IDE View
     path('', views.index_view, name='index'),
 
-    # Status API
+    # Status & GigaChat Key Configuration API
     path('api/status/', views.api_status, name='api_status'),
+    path('api/gigachat/key/', views.api_gigachat_key, name='api_gigachat_key'),
 
     # Projects
     path('api/projects/', views.api_projects, name='api_projects'),

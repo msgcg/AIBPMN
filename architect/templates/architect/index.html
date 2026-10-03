@@ -112,12 +112,13 @@
         </div>
       </div>
 
-      <!-- Status Badge -->
-      <div id="status-badge" class="status-badge {% if status_info.ok %}ok{% else %}err{% endif %}">
+      <!-- Status Badge (Click to configure GigaChat API Key) -->
+      <div id="status-badge" class="status-badge {% if status_info.ok %}ok{% else %}err{% endif %}" role="button" tabindex="0" title="Настроить авторизационный ключ Sber GigaChat API" style="cursor: pointer;">
         <span class="status-dot"></span>
         <span id="status-badge-text">
-          {% if status_info.ok %}{{ status_info.model }} готов{% else %}Ошибка GigaChat{% endif %}
+          {% if status_info.ok %}{{ status_info.model }} готов{% elif status_info.key_required %}Ключ GigaChat{% else %}Ошибка GigaChat{% endif %}
         </span>
+        <i data-lucide="key-round" class="icon-xs" style="margin-left: 2px; opacity: 0.8;"></i>
       </div>
 
       <!-- User Profile / Auth Section -->
@@ -183,9 +184,9 @@
             <span>Удалить диаграмму</span>
           </div>
           <div class="dropdown-divider"></div>
-          <div class="dropdown-item" style="cursor: default; opacity: 0.85; font-size: 0.78rem;">
-            <span class="status-dot" style="background: {% if status_info.ok %}var(--accent-success){% else %}var(--accent-danger){% endif %}; margin-right: 6px;"></span>
-            <span>{% if status_info.ok %}{{ status_info.model }}{% else %}GigaChat офлайн{% endif %}</span>
+          <div class="dropdown-item" id="mobile-gigachat-key-btn" style="cursor: pointer; font-size: 0.78rem;">
+            <span class="status-dot" id="mobile-status-dot" style="background: {% if status_info.ok %}var(--accent-success){% else %}var(--accent-danger){% endif %}; margin-right: 6px;"></span>
+            <span id="mobile-status-text">{% if status_info.ok %}{{ status_info.model }} (Настроить ключ){% else %}Настроить ключ GigaChat{% endif %}</span>
           </div>
         </div>
       </div>
@@ -493,6 +494,10 @@
       isAuthenticated: {% if user.is_authenticated %}true{% else %}false{% endif %},
       username: "{{ user.username|default:'' }}",
       isGuest: {% if not user.is_authenticated %}true{% else %}false{% endif %},
+      hasGigaChatKey: {% if has_gigachat_key %}true{% else %}false{% endif %},
+      gigaChatScope: "{{ gigachat_scope|default:'GIGACHAT_API_PERS'|escapejs }}",
+      gigaChatMaskedKey: "{{ gigachat_masked_key|default:''|escapejs }}",
+      gigaChatStorageMode: "{% if user.is_authenticated %}db{% else %}cookie{% endif %}",
       messages: [
         {% for m in initial_messages %}
           {
@@ -742,6 +747,121 @@
             <button type="submit" id="profile-del-submit-btn" class="btn btn-danger" style="width: 100%; justify-content: center; height: 38px;">
               <i data-lucide="trash-2" class="icon-sm"></i>
               <span>Удалить аккаунт навсегда</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Sber GigaChat API Credentials Modal ─────────────────────────────── -->
+  <div id="gigachat-key-modal" class="modal-overlay">
+    <div class="modal-box auth-modal-box" style="max-width: 520px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i data-lucide="key-round" class="icon" style="color: var(--accent-primary);"></i>
+          <span>Авторизация Sber GigaChat API</span>
+        </div>
+        <button id="gigachat-key-modal-close" class="btn btn-ghost btn-icon btn-sm" title="Закрыть">
+          <i data-lucide="x" class="icon-sm"></i>
+        </button>
+      </div>
+
+      <div class="modal-body auth-modal-body">
+        <!-- Reason banner when opened automatically on AI attempt -->
+        <div id="gigachat-key-reason" class="gigachat-reason-banner" style="display: none;">
+          <i data-lucide="sparkles" class="icon-sm" style="flex-shrink: 0;"></i>
+          <span id="gigachat-key-reason-text">Для работы ИИ-архитектора укажите ваш авторизационный ключ Sber GigaChat API.</span>
+        </div>
+
+        <!-- Storage Mode Indicator (DB vs Cookie) -->
+        <div id="gigachat-storage-badge" class="gigachat-storage-info {% if user.is_authenticated %}storage-db{% else %}storage-cookie{% endif %}">
+          {% if user.is_authenticated %}
+            <i data-lucide="database" class="icon-sm"></i>
+            <div>
+              <strong>Учетная запись ({{ user.username }})</strong>
+              <span>Ключ будет привязан к вашему профилю и сохранен в базе данных.</span>
+            </div>
+          {% else %}
+            <i data-lucide="cookie" class="icon-sm"></i>
+            <div>
+              <strong>Гостевой режим</strong>
+              <span>Ключ будет сохранен локально в cookie вашего браузера. При входе в аккаунт он автоматически перенесется в БД.</span>
+            </div>
+          {% endif %}
+        </div>
+
+        <!-- Active Saved Key Banner -->
+        <div id="gigachat-current-key-box" class="gigachat-current-key-box" style="display: {% if has_gigachat_key %}flex{% else %}none{% endif %};">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="check-circle-2" class="icon-sm" style="color: var(--accent-success);"></i>
+            <span style="font-size: 0.82rem;">Активный ключ: <code id="gigachat-masked-key-val">{{ gigachat_masked_key }}</code></span>
+          </div>
+          <button type="button" id="gigachat-key-delete-btn" class="btn btn-ghost btn-sm" style="color: var(--accent-danger); padding: 2px 8px; height: 26px; font-size: 0.76rem;">
+            <i data-lucide="trash-2" class="icon-xs"></i>
+            <span>Удалить ключ</span>
+          </button>
+        </div>
+
+        <!-- Collapsible Step-by-Step Guide -->
+        <details id="gigachat-guide-details" class="gigachat-guide-collapsible">
+          <summary class="gigachat-guide-summary">
+            <span class="gigachat-guide-title">
+              <i data-lucide="help-circle" class="icon-sm" style="color: var(--accent-primary); flex-shrink: 0;"></i>
+              <span>Как получить ключ Sber GigaChat API?</span>
+            </span>
+            <span class="gigachat-guide-right">
+              <span class="gigachat-guide-hint"></span>
+              <i data-lucide="chevron-down" class="icon-xs gigachat-guide-chevron"></i>
+            </span>
+          </summary>
+          <div class="gigachat-guide-body">
+            <ol class="gigachat-guide-steps">
+              <li>
+                Откройте консоль разработчика <a href="https://developers.sber.ru/studio" target="_blank" rel="noopener noreferrer">developers.sber.ru/studio</a> и войдите по <strong>Сбер ID</strong>.
+              </li>
+              <li>
+                Нажмите <strong>«Создать проект»</strong> и выберите <strong>«GigaChat API»</strong> (физическим лицам доступен бесплатный пакет по версии <code>GIGACHAT_API_PERS</code>).
+              </li>
+              <li>
+                В меню проекта перейдите в раздел <strong>«Настройки API»</strong> и нажмите кнопку <strong>«Получить новый ключ»</strong>.
+              </li>
+              <li>
+                Скопируйте сгенерированную строку <strong>Authorization Key (Base64)</strong> и вставьте её в поле ниже.
+              </li>
+            </ol>
+            <div class="gigachat-guide-note">
+              <i data-lucide="info" class="icon-xs" style="flex-shrink: 0; margin-top: 2px;"></i>
+              <span>Ключ показывается в личном кабинете только один раз при создании. При выборе типа пакета укажите соответствующий <strong>Scope</strong> ниже.</span>
+            </div>
+          </div>
+        </details>
+
+        <form id="gigachat-key-form" class="auth-form active" style="margin-top: 12px;">
+          <div class="form-group">
+            <label class="form-label" for="gigachat-auth-key-input">Authorization Key (Base64)</label>
+            <input type="password" id="gigachat-auth-key-input" class="form-control" placeholder="Вставьте ключ авторизации GigaChat API..." autocomplete="off" required>
+            <span class="field-hint">Ключ из личного кабинета Sber Studio (developers.sber.ru/studio)</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="gigachat-scope-select">Версия API (Scope)</label>
+            <select id="gigachat-scope-select" class="form-control select-input" style="width: 100%; height: 38px;">
+              <option value="GIGACHAT_API_PERS" {% if gigachat_scope == 'GIGACHAT_API_PERS' %}selected{% endif %}>GIGACHAT_API_PERS — Для физических лиц</option>
+              <option value="GIGACHAT_API_B2B" {% if gigachat_scope == 'GIGACHAT_API_B2B' %}selected{% endif %}>GIGACHAT_API_B2B — Для ИП и юрлиц (платные пакеты)</option>
+              <option value="GIGACHAT_API_CORP" {% if gigachat_scope == 'GIGACHAT_API_CORP' %}selected{% endif %}>GIGACHAT_API_CORP — Для ИП и юрлиц (pay-as-you-go)</option>
+            </select>
+          </div>
+
+          <div id="gigachat-key-error-msg" class="auth-error-msg" style="display:none;"></div>
+
+          <div style="display: flex; gap: 8px; margin-top: 18px;">
+            <button type="button" id="gigachat-key-cancel-btn" class="btn btn-ghost" style="flex: 1; justify-content: center; height: 38px;">
+              <span>Отмена</span>
+            </button>
+            <button type="submit" id="gigachat-key-submit-btn" class="btn btn-primary" style="flex: 2; justify-content: center; height: 38px;">
+              <i data-lucide="check" class="icon-sm"></i>
+              <span id="gigachat-key-submit-text">Проверить и сохранить</span>
             </button>
           </div>
         </form>
